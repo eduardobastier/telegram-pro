@@ -3711,11 +3711,13 @@ public class MessageObject {
             return replyUpdated || true;
         } else if (
             messageOwner != null &&
-            TranslateController.isTranslatable(this) &&
-            translateController.isTranslatingDialog(getDialogId()) &&
-            !translateController.isTranslateDialogHidden(getDialogId()) &&
-            (translatedText != null || messageOwner.translatedPoll != null || messageOwner.translatedRichMessage != null) &&
-            TextUtils.equals(translateController.getDialogTranslateTo(getDialogId()), messageOwner.translatedToLanguage)
+            TranslateController.isTranslatable(this) && (
+                translateController.isTranslatingDialog(getDialogId()) &&
+                !translateController.isTranslateDialogHidden(getDialogId()) &&
+                (translatedText != null || messageOwner.translatedPoll != null || messageOwner.translatedRichMessage != null) &&
+                TextUtils.equals(translateController.getDialogTranslateTo(getDialogId()), messageOwner.translatedToLanguage) ||
+                messageOwner.inlineTranslated && translatedText != null
+            )
         ) {
             if (translated && !summarized) {
                 return replyUpdated || false;
