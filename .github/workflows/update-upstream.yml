@@ -2,7 +2,7 @@ name: Update upstream
 
 on:
   schedule:
-    - cron: "0 9 * * 1"
+    - cron: "0 9 * * *"
   workflow_dispatch:
 
 permissions:
@@ -12,8 +12,13 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Check for a new official Telegram commit
         id: check
@@ -28,31 +33,59 @@ jobs:
         continue-on-error: true
         run: scripts/update-upstream.sh "${{ steps.check.outputs.new }}"
 
-      - name: Open pull request
-        if: steps.check.outputs.changed == 'true'
+      - name: Release new version
+        if: steps.check.outputs.changed == 'true' && steps.apply.outcome == 'success'
+        id: release
+        env:
+          NEW: ${{ steps.check.outputs.new }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BASE_VERSION=$(grep '^APP_VERSION_NAME=' Telegram/gradle.properties | cut -d= -f2)
+          LAST=$(grep -m1 -o '^## v[0-9]*\.[0-9]*\.[0-9]*' CHANGELOG.md | cut -c4-)
+          IFS=. read -r MAJOR MINOR PATCH <<< "${LAST#v}"
+          VERSION="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          python3 - "$VERSION" "$BASE_VERSION" <<'PY'
+          import sys
+          version, base = sys.argv[1], sys.argv[2]
+          text = open('CHANGELOG.md').read()
+          entry = f"## {version}\n- Base atualizada para o Telegram {base}\n- Todos os recursos do Telegram Pro mantidos\n\n"
+          i = text.index('## ')
+          open('CHANGELOG.md', 'w').write(text[:i] + entry + text[i:])
+          PY
+          git add UPSTREAM_REF patches CHANGELOG.md
+          git commit -m "Update base to Telegram ${BASE_VERSION} (DrKLO/Telegram@${NEW:0:7})"
+          git tag "$VERSION"
+          git push origin HEAD:main "$VERSION"
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Open pull request for conflicts
+        if: steps.check.outputs.changed == 'true' && steps.apply.outcome != 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           NEW: ${{ steps.check.outputs.new }}
-          APPLIED: ${{ steps.apply.outcome }}
         run: |
           BRANCH="update-upstream-${NEW:0:7}"
           if git ls-remote --exit-code origin "refs/heads/$BRANCH" > /dev/null; then exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          if [ "$APPLIED" != "success" ]; then
-            git checkout -- patches
-            echo "$NEW" > UPSTREAM_REF
-            NOTE="⚠️ Os patches **não aplicaram** limpo na nova base. Rode \`scripts/setup.sh\` localmente, resolva os conflitos e rode \`scripts/export-patches.sh\`."
-          else
-            NOTE="✅ Patches aplicados sem conflito."
-          fi
-          git add UPSTREAM_REF patches
+          echo "$NEW" > UPSTREAM_REF
+          git add UPSTREAM_REF
           git commit -m "Update base to DrKLO/Telegram@${NEW:0:7}"
           git push origin "$BRANCH"
-          gh pr create --title "Atualizar base para DrKLO/Telegram@${NEW:0:7}" \
+          gh pr create --title "Atualizar base para DrKLO/Telegram@${NEW:0:7} (conflito)" \
             --body "Nova versão do Telegram oficial: https://github.com/DrKLO/Telegram/commit/${NEW}
 
-          ${NOTE}
+          ⚠️ Os patches **não aplicaram** limpo na nova base, então nada foi publicado.
+          Rode \`scripts/setup.sh\` localmente nesta branch, resolva os conflitos em \`Telegram/\`, rode \`git -C Telegram am --continue\` e \`scripts/export-patches.sh\`, faça commit e crie a tag da versão."
 
-          Depois do merge, crie uma tag \`vX.Y.Z\` para gerar o APK e enviar ao canal."
+  build:
+    needs: update
+    if: needs.update.outputs.released == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.update.outputs.version }}
+      version: ${{ needs.update.outputs.version }}
+    secrets: inherit

@@ -4,6 +4,16 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        type: string
+        required: true
+      version:
+        description: Release version (vX.Y.Z)
+        type: string
+        required: true
 
 jobs:
   build:
@@ -12,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
 
       - name: Free disk space
@@ -52,8 +63,11 @@ jobs:
       - name: Collect APK and release notes
         id: meta
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          [ "$GITHUB_REF_TYPE" = "tag" ] || VERSION="dev-$(git rev-parse --short HEAD)"
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+            [ "$GITHUB_REF_TYPE" = "tag" ] || VERSION="dev-$(git rev-parse --short HEAD)"
+          fi
           BASE_VERSION=$(grep '^APP_VERSION_NAME=' Telegram/gradle.properties | cut -d= -f2)
           APK="TelegramPro-${VERSION}-${BASE_VERSION}-arm64.apk"
           cp Telegram/TMessagesProj_App/build/outputs/apk/afat/release/app.apk "$APK"
@@ -86,11 +100,26 @@ jobs:
             echo "<b>Telegram Pro ${VERSION}</b>"
             echo "Base: Telegram ${BASE_VERSION} — <a href=\"https://github.com/DrKLO/Telegram/commit/${REF}\">changelog da base</a>"
             echo
-            echo "<b>Mudanças do Telegram Pro:</b>"
-            esc < notes.txt
+            echo "<pre>Novidades:"
+            sed 's/^- /• /' notes.txt | esc
+            echo "</pre>"
+            echo
+            echo "Android arm64 • Instale por cima para atualizar"
           } > caption.txt
-          # Telegram captions are limited to 1024 characters
-          python3 -c "import sys; t=open('caption.txt').read(); print(t if len(t)<=1024 else t[:1000].rsplit('\n',1)[0]+'\n…', end='')" > caption_final.txt
+          # Telegram captions are limited to 1024 characters: drop note lines (keeping the <pre> block closed) until it fits
+          python3 - <<'PY'
+          lines = open('caption.txt').read().split('\n')
+          start = next(i for i, line in enumerate(lines) if line.startswith('<pre>'))
+          end = lines.index('</pre>')
+          trimmed = False
+          while len('\n'.join(lines)) > 1020 and end - start > 1:
+              del lines[end - 1]
+              end -= 1
+              trimmed = True
+          if trimmed:
+              lines.insert(end, '…')
+          open('caption_final.txt', 'w').write('\n'.join(lines))
+          PY
           curl -sS --fail-with-body "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
             -F chat_id="${CHAT_ID}" \
             -F parse_mode=HTML \

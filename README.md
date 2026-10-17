@@ -44,7 +44,11 @@ PRO_KEY_PASSWORD=...
 
 ## Atualizar a base (Telegram oficial)
 
-Automático: o workflow **Update upstream** roda toda segunda-feira e abre um PR quando sai uma versão nova do Telegram.
+Automático: o workflow **Update upstream** roda todo dia. Quando sai uma versão nova do Telegram oficial:
+
+1. Reaplica os patches na nova base.
+2. Se aplicarem sem conflito: adiciona a versão no `CHANGELOG.md`, cria a tag (`vX.Y.Z+1`), gera o APK e posta no canal.
+3. Se der conflito: não publica nada e abre um PR para resolver manualmente.
 
 Manual:
 
