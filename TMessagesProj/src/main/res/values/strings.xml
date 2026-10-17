@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="AppName">Telegram</string>
+    <string name="AppName">Telegram Pro</string>
     <string name="AppNameBeta">Telegram Beta</string>
     <string name="LanguageName">English</string>
     <string name="English">English</string>
@@ -2709,6 +2709,25 @@
     <string name="AutodownloadSizeLimit">Limit by Size</string>
     <string name="AutodownloadSizeLimitUpTo">up to %1$s</string>
     <string name="Streaming">Streaming</string>
+    <string name="ProSettings">Telegram Pro</string>
+    <string name="ProBoostDownload">Acelerar download</string>
+    <string name="ProBoostUpload">Acelerar upload</string>
+    <string name="ProFreeChatTranslate">Traduzir chats inteiros</string>
+    <string name="ProSettingsInfo">Velocidade de download/upload e tradução</string>
+    <string name="ProTranslateStyle">Estilo de tradução</string>
+    <string name="ProTranslateStylePopup">Pop-up</string>
+    <string name="ProTranslateStyleInline">Na mensagem</string>
+    <string name="ProTranslateShowOriginal">Mostrar texto original</string>
+    <string name="ProTranslateProvider">Provedor de tradução</string>
+    <string name="ProTranslateProviderGoogle">Google Tradutor</string>
+    <string name="ProTranslateProviderTelegram">Telegram (Premium)</string>
+    <string name="ProTranslateTo">Idioma de destino</string>
+    <string name="ProDoNotTranslate">Não traduzir</string>
+    <string name="ProAutoTranslate">Tradução automática</string>
+    <string name="ProSpeedHeader">Velocidade</string>
+    <string name="ProSpeedInfo">Usa partes maiores e mais conexões paralelas para baixar e enviar arquivos.</string>
+    <string name="ProTranslateHeader">Tradução</string>
+    <string name="ProTranslateInfo">Tradução automática traduz sozinha os chats que estão em outro idioma. O provedor Telegram só funciona com Premium; sem Premium, ou se o provedor escolhido falhar, o Google Tradutor é usado.</string>
     <string name="EnableStreaming">Stream Videos and Audio Files</string>
     <string name="EnableAllStreamingInfo">Some videos can\'t be streamed – e.g., all videos that were sent from Android using Telegram 4.7 and earlier versions.\n</string>
     <string name="TapToChangePhone">Tap to change phone number</string>

@@ -91,7 +91,7 @@ public class TranslateController extends BaseController {
     }
 
     public boolean isFeatureAvailable() {
-        return isChatTranslateEnabled() && UserConfig.getInstance(currentAccount).isPremium();
+        return isChatTranslateEnabled() && (UserConfig.getInstance(currentAccount).isPremium() || SharedConfig.freeChatTranslate);
     }
 
     public boolean isFeatureAvailable(long dialogId) {
@@ -101,6 +101,7 @@ public class TranslateController extends BaseController {
         final TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
         return (
             UserConfig.getInstance(currentAccount).isPremium() ||
+            SharedConfig.freeChatTranslate ||
             chat != null && chat.autotranslation
         );
     }
@@ -109,7 +110,7 @@ public class TranslateController extends BaseController {
     private Boolean contextTranslateEnabled;
 
     public boolean isChatTranslateEnabled() {
-        if (!getMessagesController().isTranslationsAutoEnabled()) {
+        if (!getMessagesController().isTranslationsAutoEnabled() && !SharedConfig.freeChatTranslate) {
             return false;
         }
         if (chatTranslateEnabled == null) {
@@ -220,7 +221,7 @@ public class TranslateController extends BaseController {
             return false;
         }
         final TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
-        return chat != null && chat.autotranslation;
+        return SharedConfig.freeChatTranslate && SharedConfig.autoTranslate || chat != null && chat.autotranslation;
     }
 
     public boolean isTranslatingDialog(long dialogId) {
@@ -724,6 +725,9 @@ public class TranslateController extends BaseController {
                         if (finalMessageObject.getId() != id) {
                             FileLog.e("wtf, asked to translate " + finalMessageObject.getId() + " but got " + id + "!");
                         }
+                        if (!isTranscription && SharedConfig.translateShowOriginal) {
+                            text = withOriginalText(finalMessageObject.messageOwner, text);
+                        }
                         finalMessageObject.messageOwner.translatedToLanguage = lang;
                         if (isTranscription) {
                             finalMessageObject.messageOwner.translatedVoiceTranscription = text;
@@ -763,6 +767,50 @@ public class TranslateController extends BaseController {
                 keepReplyMessage(messageObject);
             }
         }
+    }
+
+    private static TLRPC.TL_textWithEntities withOriginalText(TLRPC.Message message, TLRPC.TL_textWithEntities translated) {
+        if (translated == null || message == null || TextUtils.isEmpty(message.message)) {
+            return translated;
+        }
+        final String separator = "\n--------\n";
+        final TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
+        result.text = message.message + separator + translated.text;
+        if (message.entities != null) {
+            result.entities.addAll(message.entities);
+        }
+        final int shift = message.message.length() + separator.length();
+        if (translated.entities != null) {
+            for (TLRPC.MessageEntity entity : translated.entities) {
+                entity.offset += shift;
+                result.entities.add(entity);
+            }
+        }
+        return result;
+    }
+
+    public void toggleInlineTranslation(MessageObject messageObject) {
+        if (messageObject == null || messageObject.messageOwner == null) {
+            return;
+        }
+        if (messageObject.messageOwner.inlineTranslated) {
+            messageObject.messageOwner.inlineTranslated = false;
+            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messageTranslated, messageObject);
+            return;
+        }
+        pushToTranslate(messageObject, TranslateAlert2.getToLanguage(), (isTranscription, id, text, lang) -> {
+            if (text == null || isTranscription) {
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, getString(R.string.TranslationFailedAlert2));
+                return;
+            }
+            if (SharedConfig.translateShowOriginal) {
+                text = withOriginalText(messageObject.messageOwner, text);
+            }
+            messageObject.messageOwner.translatedToLanguage = lang;
+            messageObject.messageOwner.translatedText = text;
+            messageObject.messageOwner.inlineTranslated = true;
+            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messageTranslated, messageObject);
+        });
     }
 
     public void invalidateTranslation(MessageObject messageObject) {
@@ -1102,7 +1150,10 @@ public class TranslateController extends BaseController {
                     }
                 }
 
-                final String method = getMessagesController().translationsAutoEnabled;
+                String method = getMessagesController().translationsAutoEnabled;
+                if (SharedConfig.freeChatTranslate && (SharedConfig.translateProvider != SharedConfig.TRANSLATE_PROVIDER_TELEGRAM || !getUserConfig().isPremium())) {
+                    method = "alternative";
+                }
                 if ("alternative".equals(method) || "system".equals(method)) {
                     final String toLanguage = pendingTranslation1.language;
                     for (int i = 0; i < pendingTranslation1.messageIds.size(); ++i) {
@@ -1774,7 +1825,7 @@ public class TranslateController extends BaseController {
     }
 
     private boolean isLanguageRestricted(String lng) {
-        if (getUserConfig().isPremium()) {
+        if (getUserConfig().isPremium() || SharedConfig.freeChatTranslate) {
             return RestrictedLanguagesSelectActivity.getRestrictedLanguages().contains(lng);
         }
         try {

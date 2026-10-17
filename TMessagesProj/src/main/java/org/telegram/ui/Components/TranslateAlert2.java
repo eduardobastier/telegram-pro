@@ -58,6 +58,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.ProTranslators;
 import org.telegram.messenger.R;
 import org.telegram.messenger.RichMessageLayout;
 import org.telegram.messenger.SharedConfig;
@@ -314,7 +315,7 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
         }
 
         final String method = MessagesController.getInstance(currentAccount).translationsManualEnabled;
-        if ("alternative".equalsIgnoreCase(method)) {
+        if ("alternative".equalsIgnoreCase(method) || SharedConfig.freeChatTranslate && SharedConfig.translateProvider != SharedConfig.TRANSLATE_PROVIDER_TELEGRAM) {
             translateAlt();
             return;
         }/* else if ("system".equalsIgnoreCase(method)) {
@@ -520,11 +521,24 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
 
     public static void alternativeTranslate(String text, String fromLng, String toLng, Utilities.Callback2<String, Boolean> done) {
         if (done == null) return;
+        if (ProTranslators.translate(text, toLng, (result, rateLimit) -> {
+            if (result != null) {
+                done.run(result, false);
+            } else {
+                googleTranslate(text, fromLng, toLng, done);
+            }
+        })) {
+            return;
+        }
+        googleTranslate(text, fromLng, toLng, done);
+    }
+
+    private static void googleTranslate(String text, String fromLng, String toLng, Utilities.Callback2<String, Boolean> done) {
         if (fromLng == null) {
             LanguageDetector.detectLanguage(text, lng -> {
-                alternativeTranslate(text, lng, toLng, done);
+                googleTranslate(text, lng, toLng, done);
             }, e -> {
-                alternativeTranslate(text, "en", toLng, done);
+                googleTranslate(text, "en", toLng, done);
             });
             return;
         }
@@ -572,11 +586,8 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
                 String uri;
                 HttpURLConnection connection = null;
                 try {
-                    uri = "https://translate.goo";
-                    uri += "gleapis.com/transl";
-                    uri += "ate_a";
-                    uri += "/singl";
-                    uri += "e?client=gtx&sl=" + Uri.encode(fromLng) + "&tl=" + Uri.encode(toLng) + "&dt=t" + "&ie=UTF-8&oe=UTF-8&otf=1&ssel=0&tsel=0&kc=7&dt=at&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q=";
+                    // translate.googleapis.com/translate_a/single (client=gtx) answers 429 for most clients now
+                    uri = "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=" + Uri.encode(toLng) + "&q=";
                     uri += text;
                     connection = (HttpURLConnection) new URI(uri).toURL().openConnection();
                     connection.setRequestMethod("GET");
@@ -594,20 +605,9 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
 
                     JSONTokener tokener = new JSONTokener(jsonString);
                     JSONArray array = new JSONArray(tokener);
-                    JSONArray array1 = array.getJSONArray(0);
-                    String sourceLanguage = null;
-                    try {
-                        sourceLanguage = array.getString(2);
-                    } catch (Exception e2) {}
-                    if (sourceLanguage != null && sourceLanguage.contains("-")) {
-                        sourceLanguage = sourceLanguage.substring(0, sourceLanguage.indexOf("-"));
-                    }
-                    String result = "";
-                    for (int i = 0; i < array1.length(); ++i) {
-                        String blockText = array1.getJSONArray(i).getString(0);
-                        if (blockText != null && !blockText.equals("null"))
-                            result += /*(i > 0 ? "\n" : "") +*/ blockText;
-                    }
+                    // response is either ["translation"] or [["translation", "detected_lang"]]
+                    final Object first = array.get(0);
+                    String result = first instanceof JSONArray ? ((JSONArray) first).getString(0) : (String) first;
                     if (text.length() > 0 && text.charAt(0) == '\n')
                         result = "\n" + result;
                     final String finalResult = result;

@@ -42,6 +42,7 @@ public class FileUploadOperation {
     private static final int initialRequestsCount = 8;
     private static final int initialRequestsSlowNetworkCount = 1;
     private static final int maxUploadingKBytes = 1024 * 2;
+    private static final int boostedUploadingKBytes = 1024 * 8;
     private static final int maxUploadingSlowNetworkKBytes = 32;
 
     private int maxRequestsCount;
@@ -317,7 +318,12 @@ public class FileUploadOperation {
                     }
                     uploadChunkSize = chunkSize;
                 }
-                maxRequestsCount = Math.max(1, (slowNetwork ? maxUploadingSlowNetworkKBytes : maxUploadingKBytes) / uploadChunkSize);
+                if (SharedConfig.boostUploadSpeed && !slowNetwork) {
+                    uploadChunkSize = Math.max(uploadChunkSize, 512);
+                    maxRequestsCount = Math.max(1, boostedUploadingKBytes / uploadChunkSize);
+                } else {
+                    maxRequestsCount = Math.max(1, (slowNetwork ? maxUploadingSlowNetworkKBytes : maxUploadingKBytes) / uploadChunkSize);
+                }
 
                 if (isEncrypted) {
                     freeRequestIvs = new ArrayList<>(maxRequestsCount);

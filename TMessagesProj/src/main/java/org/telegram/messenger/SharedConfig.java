@@ -260,6 +260,22 @@ public class SharedConfig {
     public static boolean storiesIntroShown;
     public static boolean disableVoiceAudioEffects;
     public static boolean forceDisableTabletMode;
+    public static boolean boostDownloadSpeed;
+    public static boolean boostUploadSpeed;
+    public static boolean freeChatTranslate;
+    public static final int TRANSLATE_PROVIDER_GOOGLE = 0;
+    public static final int TRANSLATE_PROVIDER_TELEGRAM = 1;
+    public static final int TRANSLATE_PROVIDER_MICROSOFT = 2;
+    public static final int TRANSLATE_PROVIDER_YANDEX = 3;
+    public static final int TRANSLATE_PROVIDER_LINGO = 4;
+    public static final int TRANSLATE_PROVIDER_BAIDU = 5;
+    public static final int TRANSLATE_PROVIDER_SOGOU = 6;
+    public static final int TRANSLATE_STYLE_POPUP = 0;
+    public static final int TRANSLATE_STYLE_INLINE = 1;
+    public static int translateProvider;
+    public static int translateStyle;
+    public static boolean translateShowOriginal;
+    public static boolean autoTranslate;
     public static boolean updateStickersOrderOnSend = true;
     public static boolean bigCameraForRound;
     public static Boolean useCamera2Force;
@@ -628,6 +644,13 @@ public class SharedConfig {
             pauseMusicOnRecord = preferences.getBoolean("pauseMusicOnRecord", true);
             pauseMusicOnMedia = preferences.getBoolean("pauseMusicOnMedia", false);
             forceDisableTabletMode = preferences.getBoolean("forceDisableTabletMode", false);
+            boostDownloadSpeed = preferences.getBoolean("boostDownloadSpeed", true);
+            boostUploadSpeed = preferences.getBoolean("boostUploadSpeed", true);
+            freeChatTranslate = preferences.getBoolean("freeChatTranslate", true);
+            translateProvider = preferences.getInt("translateProvider", TRANSLATE_PROVIDER_GOOGLE);
+            translateStyle = preferences.getInt("translateStyle", TRANSLATE_STYLE_POPUP);
+            translateShowOriginal = preferences.getBoolean("translateShowOriginal", false);
+            autoTranslate = preferences.getBoolean("autoTranslate", false);
             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
             streamMkv = preferences.getBoolean("streamMkv", false);
             suggestStickers = preferences.getInt("suggestStickers", 0);
@@ -1322,6 +1345,41 @@ public class SharedConfig {
         SharedPreferences.Editor editor = preferences.edit();
         editor.putBoolean("streamMedia", streamMedia);
         editor.apply();
+    }
+
+    public static void toggleBoostDownloadSpeed() {
+        boostDownloadSpeed = !boostDownloadSpeed;
+        MessagesController.getGlobalMainSettings().edit().putBoolean("boostDownloadSpeed", boostDownloadSpeed).apply();
+    }
+
+    public static void toggleBoostUploadSpeed() {
+        boostUploadSpeed = !boostUploadSpeed;
+        MessagesController.getGlobalMainSettings().edit().putBoolean("boostUploadSpeed", boostUploadSpeed).apply();
+    }
+
+    public static void toggleFreeChatTranslate() {
+        freeChatTranslate = !freeChatTranslate;
+        MessagesController.getGlobalMainSettings().edit().putBoolean("freeChatTranslate", freeChatTranslate).apply();
+    }
+
+    public static void setTranslateProvider(int provider) {
+        translateProvider = provider;
+        MessagesController.getGlobalMainSettings().edit().putInt("translateProvider", translateProvider).apply();
+    }
+
+    public static void setTranslateStyle(int style) {
+        translateStyle = style;
+        MessagesController.getGlobalMainSettings().edit().putInt("translateStyle", translateStyle).apply();
+    }
+
+    public static void toggleTranslateShowOriginal() {
+        translateShowOriginal = !translateShowOriginal;
+        MessagesController.getGlobalMainSettings().edit().putBoolean("translateShowOriginal", translateShowOriginal).apply();
+    }
+
+    public static void toggleAutoTranslate() {
+        autoTranslate = !autoTranslate;
+        MessagesController.getGlobalMainSettings().edit().putBoolean("autoTranslate", autoTranslate).apply();
     }
 
     public static void toggleSortContactsByName() {
