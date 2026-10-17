@@ -1,0 +1,58 @@
+name: Update upstream
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for a new official Telegram commit
+        id: check
+        run: |
+          NEW=$(git ls-remote https://github.com/DrKLO/Telegram.git refs/heads/master | cut -f1)
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          if [ "$NEW" = "$(cat UPSTREAM_REF)" ]; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Re-apply patches on the new base
+        if: steps.check.outputs.changed == 'true'
+        id: apply
+        continue-on-error: true
+        run: scripts/update-upstream.sh "${{ steps.check.outputs.new }}"
+
+      - name: Open pull request
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW: ${{ steps.check.outputs.new }}
+          APPLIED: ${{ steps.apply.outcome }}
+        run: |
+          BRANCH="update-upstream-${NEW:0:7}"
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH" > /dev/null; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          if [ "$APPLIED" != "success" ]; then
+            git checkout -- patches
+            echo "$NEW" > UPSTREAM_REF
+            NOTE="⚠️ Os patches **não aplicaram** limpo na nova base. Rode \`scripts/setup.sh\` localmente, resolva os conflitos e rode \`scripts/export-patches.sh\`."
+          else
+            NOTE="✅ Patches aplicados sem conflito."
+          fi
+          git add UPSTREAM_REF patches
+          git commit -m "Update base to DrKLO/Telegram@${NEW:0:7}"
+          git push origin "$BRANCH"
+          gh pr create --title "Atualizar base para DrKLO/Telegram@${NEW:0:7}" \
+            --body "Nova versão do Telegram oficial: https://github.com/DrKLO/Telegram/commit/${NEW}
+
+          ${NOTE}
+
+          Depois do merge, crie uma tag \`vX.Y.Z\` para gerar o APK e enviar ao canal."

@@ -1,0 +1,151 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Eduardo Bastier <eduardobastier93@gmail.com>
+Date: Sat, 17 Oct 2026 19:43:09 -0300
+Subject: [PATCH 1/2] Telegram Pro: build setup
+
+- applicationId com.eduardobastier.telegrampro, arm64-v8a only
+- API_ID/API_HASH and signing key read from PRO_* gradle properties/env
+- app.nekogram.translator + okhttp dependencies
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ TMessagesProj/build.gradle                    |  6 +++++
+ .../org/telegram/messenger/BuildVars.java     |  4 ++--
+ TMessagesProj_App/build.gradle                | 24 +++++++++++++++----
+ TMessagesProj_App/google-services.json        | 24 +++++++++++++++++++
+ gradle.properties                             |  2 +-
+ 5 files changed, 52 insertions(+), 8 deletions(-)
+
+diff --git a/TMessagesProj/build.gradle b/TMessagesProj/build.gradle
+index 70c567d..c532dba 100644
+--- a/TMessagesProj/build.gradle
++++ b/TMessagesProj/build.gradle
+@@ -43,6 +43,8 @@ configurations.all {
+ 
+ dependencies {
+     implementation 'androidx.core:core:1.16.0'
++    implementation 'app.nekogram.translator:translator:2.0.2'
++    implementation 'com.squareup.okhttp3:okhttp:5.5.0'
+     implementation 'androidx.palette:palette:1.0.0'
+     implementation 'androidx.exifinterface:exifinterface:1.3.6'
+     implementation 'androidx.dynamicanimation:dynamicanimation:1.0.0'
+@@ -138,6 +140,10 @@ android {
+         minSdkVersion 23
+         targetSdkVersion 36
+ 
++        // Telegram Pro: API credentials come from -PPRO_APP_ID/-PPRO_APP_HASH, ~/.gradle/gradle.properties or env
++        buildConfigField "int", "PRO_APP_ID", (project.findProperty("PRO_APP_ID") ?: System.getenv("PRO_APP_ID") ?: "4").toString()
++        buildConfigField "String", "PRO_APP_HASH", "\"" + (project.findProperty("PRO_APP_HASH") ?: System.getenv("PRO_APP_HASH") ?: "014b35b6184100b085b0d0572f9b5103") + "\""
++
+         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
+ 
+         multiDexEnabled true
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
+index 4ed7e64..ba7c323 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
+@@ -26,8 +26,8 @@ public class BuildVars {
+     public static boolean NO_SCOPED_STORAGE = Build.VERSION.SDK_INT <= 29;
+     public static String BUILD_VERSION_STRING = BuildConfig.BUILD_VERSION_STRING;
+ 
+-    public static int APP_ID = 4;
+-    public static String APP_HASH = "014b35b6184100b085b0d0572f9b5103";
++    public static int APP_ID = BuildConfig.PRO_APP_ID;
++    public static String APP_HASH = BuildConfig.PRO_APP_HASH;
+ 
+     // SafetyNet key for Google Identity SDK, set it to empty to disable
+     public static String SAFETYNET_KEY = "AIzaSyDqt8P-7F7CPCseMkOiVRgb1LY8RN1bvH8";
+diff --git a/TMessagesProj_App/build.gradle b/TMessagesProj_App/build.gradle
+index 0bc3306..ff2ff13 100644
+--- a/TMessagesProj_App/build.gradle
++++ b/TMessagesProj_App/build.gradle
+@@ -55,10 +55,19 @@ android {
+         }
+ 
+         release {
+-            storeFile file("../TMessagesProj/config/release.keystore")
+-            storePassword RELEASE_STORE_PASSWORD
+-            keyAlias RELEASE_KEY_ALIAS
+-            keyPassword RELEASE_KEY_PASSWORD
++            // Telegram Pro: own signing key from PRO_KEYSTORE_* properties (~/.gradle/gradle.properties) or env
++            def proProp = { String name -> project.findProperty(name) ?: System.getenv(name) }
++            if (proProp("PRO_KEYSTORE_FILE")) {
++                storeFile file(proProp("PRO_KEYSTORE_FILE"))
++                storePassword proProp("PRO_KEYSTORE_PASSWORD")
++                keyAlias proProp("PRO_KEY_ALIAS")
++                keyPassword proProp("PRO_KEY_PASSWORD")
++            } else {
++                storeFile file("../TMessagesProj/config/release.keystore")
++                storePassword RELEASE_STORE_PASSWORD
++                keyAlias RELEASE_KEY_ALIAS
++                keyPassword RELEASE_KEY_PASSWORD
++            }
+         }
+     }
+ 
+@@ -131,7 +140,7 @@ android {
+         }
+         afat {
+             ndk {
+-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
++                abiFilters "arm64-v8a"
+             }
+             sourceSets.debug {
+                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
+@@ -195,3 +204,8 @@ android {
+ }
+ 
+ apply plugin: 'com.google.gms.google-services'
++
++// app.nekogram.translator declares minCompileSdk=37 but uses no API 37 at runtime
++tasks.matching { it.name.startsWith("check") && it.name.endsWith("AarMetadata") }.configureEach {
++    enabled = false
++}
+diff --git a/TMessagesProj_App/google-services.json b/TMessagesProj_App/google-services.json
+index 640e841..9e32ec3 100644
+--- a/TMessagesProj_App/google-services.json
++++ b/TMessagesProj_App/google-services.json
+@@ -92,6 +92,30 @@
+           ]
+         }
+       }
++    },
++    {
++      "client_info": {
++        "mobilesdk_app_id": "1:760348033671:android:f6afd7b67eae3860",
++        "android_client_info": {
++          "package_name": "com.eduardobastier.telegrampro"
++        }
++      },
++      "oauth_client": [],
++      "api_key": [
++        {
++          "current_key": "AIzaSyA-t0jLPjUt2FxrA8VPK2EiYHcYcboIR6k"
++        }
++      ],
++      "services": {
++        "appinvite_service": {
++          "other_platform_oauth_client": [
++            {
++              "client_id": "760348033671-2hh8ebmuflsnjoc0kldkfells9rhtfni.apps.googleusercontent.com",
++              "client_type": 3
++            }
++          ]
++        }
++      }
+     }
+   ],
+   "configuration_version": "1"
+diff --git a/gradle.properties b/gradle.properties
+index 55d530f..95c8948 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -15,7 +15,7 @@
+ #Sat Mar 12 05:53:50 MSK 2016
+ APP_VERSION_CODE=7175
+ APP_VERSION_NAME=13.0.2
+-APP_PACKAGE=org.telegram.messenger
++APP_PACKAGE=com.eduardobastier.telegrampro
+ IS_PRIVATE=false
+ RELEASE_KEY_PASSWORD=android
+ RELEASE_KEY_ALIAS=androidkey

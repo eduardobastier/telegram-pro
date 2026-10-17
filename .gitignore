@@ -1,0 +1,5 @@
+/Telegram/
+*.apk
+*.jks
+*.keystore
+local.properties

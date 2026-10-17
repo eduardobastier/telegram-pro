@@ -1,0 +1,98 @@
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Android NDK and CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+
+      - name: Prepare sources
+        run: scripts/setup.sh
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: Telegram
+        env:
+          PRO_APP_ID: ${{ secrets.PRO_APP_ID }}
+          PRO_APP_HASH: ${{ secrets.PRO_APP_HASH }}
+          PRO_KEYSTORE_BASE64: ${{ secrets.PRO_KEYSTORE_BASE64 }}
+          PRO_KEYSTORE_PASSWORD: ${{ secrets.PRO_KEYSTORE_PASSWORD }}
+          PRO_KEY_ALIAS: ${{ secrets.PRO_KEY_ALIAS }}
+          PRO_KEY_PASSWORD: ${{ secrets.PRO_KEY_PASSWORD }}
+        run: |
+          echo "$PRO_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/telegrampro.jks"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          PRO_KEYSTORE_FILE="$RUNNER_TEMP/telegrampro.jks" ./gradlew :TMessagesProj_App:assembleAfatRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx6g
+          rm -f "$RUNNER_TEMP/telegrampro.jks"
+
+      - name: Collect APK and release notes
+        id: meta
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          [ "$GITHUB_REF_TYPE" = "tag" ] || VERSION="dev-$(git rev-parse --short HEAD)"
+          BASE_VERSION=$(grep '^APP_VERSION_NAME=' Telegram/gradle.properties | cut -d= -f2)
+          APK="TelegramPro-${VERSION}-${BASE_VERSION}-arm64.apk"
+          cp Telegram/TMessagesProj_App/build/outputs/apk/afat/release/app.apk "$APK"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          # Telegram Pro changes: the CHANGELOG.md section of this version (or the first one)
+          awk -v v="## $VERSION" '
+            /^## / { if (found) exit; if ($0 == v || (!seen && v ~ /dev-/)) { found=1; seen=1; next } seen=1 }
+            found { print }
+          ' CHANGELOG.md | sed '/^$/d' > notes.txt
+          cat notes.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.apk }}
+          path: ${{ steps.meta.outputs.apk }}
+
+      - name: Send to Telegram channel
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          APK: ${{ steps.meta.outputs.apk }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          BASE_VERSION: ${{ steps.meta.outputs.base_version }}
+        run: |
+          esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+          REF=$(cat UPSTREAM_REF)
+          {
+            echo "<b>Telegram Pro ${VERSION}</b>"
+            echo "Base: Telegram ${BASE_VERSION} — <a href=\"https://github.com/DrKLO/Telegram/commit/${REF}\">changelog da base</a>"
+            echo
+            echo "<b>Mudanças do Telegram Pro:</b>"
+            esc < notes.txt
+          } > caption.txt
+          # Telegram captions are limited to 1024 characters
+          python3 -c "import sys; t=open('caption.txt').read(); print(t if len(t)<=1024 else t[:1000].rsplit('\n',1)[0]+'\n…', end='')" > caption_final.txt
+          curl -sS --fail-with-body "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+            -F chat_id="${CHAT_ID}" \
+            -F parse_mode=HTML \
+            -F caption="<caption_final.txt" \
+            -F document=@"${APK}"
