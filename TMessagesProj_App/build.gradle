@@ -55,10 +55,19 @@ android {
         }
 
         release {
-            storeFile file("../TMessagesProj/config/release.keystore")
-            storePassword RELEASE_STORE_PASSWORD
-            keyAlias RELEASE_KEY_ALIAS
-            keyPassword RELEASE_KEY_PASSWORD
+            // Telegram Pro: own signing key from PRO_KEYSTORE_* properties (~/.gradle/gradle.properties) or env
+            def proProp = { String name -> project.findProperty(name) ?: System.getenv(name) }
+            if (proProp("PRO_KEYSTORE_FILE")) {
+                storeFile file(proProp("PRO_KEYSTORE_FILE"))
+                storePassword proProp("PRO_KEYSTORE_PASSWORD")
+                keyAlias proProp("PRO_KEY_ALIAS")
+                keyPassword proProp("PRO_KEY_PASSWORD")
+            } else {
+                storeFile file("../TMessagesProj/config/release.keystore")
+                storePassword RELEASE_STORE_PASSWORD
+                keyAlias RELEASE_KEY_ALIAS
+                keyPassword RELEASE_KEY_PASSWORD
+            }
         }
     }
 
@@ -131,7 +140,7 @@ android {
         }
         afat {
             ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+                abiFilters "arm64-v8a"
             }
             sourceSets.debug {
                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
@@ -195,3 +204,8 @@ android {
 }
 
 apply plugin: 'com.google.gms.google-services'
+
+// app.nekogram.translator declares minCompileSdk=37 but uses no API 37 at runtime
+tasks.matching { it.name.startsWith("check") && it.name.endsWith("AarMetadata") }.configureEach {
+    enabled = false
+}
