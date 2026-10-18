@@ -281,6 +281,7 @@ public class SharedConfig {
     public static final int TRANSCRIBE_PROVIDER_WORKERS_AI = 2;
     public static final int TRANSCRIBE_PROVIDER_DEVICE = 3;
     public static int transcribeProvider;
+    public static boolean autoTranscribe;
     public static String cfAccountId;
     public static String cfApiToken;
     public static boolean updateStickersOrderOnSend = true;
@@ -659,6 +660,7 @@ public class SharedConfig {
             translateShowOriginal = preferences.getBoolean("translateShowOriginal", false);
             autoTranslate = preferences.getBoolean("autoTranslate", false);
             transcribeProvider = preferences.getInt("transcribeProvider", TRANSCRIBE_PROVIDER_AUTO);
+            autoTranscribe = preferences.getBoolean("autoTranscribe", false);
             cfAccountId = preferences.getString("cfAccountId", "");
             cfApiToken = preferences.getString("cfApiToken", "");
             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
@@ -1395,6 +1397,11 @@ public class SharedConfig {
     public static void setTranscribeProvider(int provider) {
         transcribeProvider = provider;
         MessagesController.getGlobalMainSettings().edit().putInt("transcribeProvider", transcribeProvider).apply();
+    }
+
+    public static void toggleAutoTranscribe() {
+        autoTranscribe = !autoTranscribe;
+        MessagesController.getGlobalMainSettings().edit().putBoolean("autoTranscribe", autoTranscribe).apply();
     }
 
     public static void setCloudflareCredentials(String accountId, String apiToken) {

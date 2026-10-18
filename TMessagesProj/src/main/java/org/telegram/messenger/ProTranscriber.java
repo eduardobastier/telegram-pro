@@ -8,6 +8,7 @@ import android.text.TextUtils;
 import android.util.Base64;
 
 import org.json.JSONArray;
+import org.telegram.tgnet.TLRPC;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -40,6 +41,24 @@ public class ProTranscriber {
         return SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI ||
             SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_DEVICE ||
             SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_AUTO && !UserConfig.getInstance(account).isPremium();
+    }
+
+    // own messages keep the recorded file in attachPath; received ones live in the download cache
+    public static File findMediaFile(MessageObject messageObject) {
+        final TLRPC.Message message = messageObject.messageOwner;
+        if (!TextUtils.isEmpty(message.attachPath)) {
+            final File file = new File(message.attachPath);
+            if (file.exists()) {
+                return file;
+            }
+        }
+        final FileLoader loader = FileLoader.getInstance(messageObject.currentAccount);
+        File file = loader.getPathToMessage(message);
+        if (file != null && file.exists()) {
+            return file;
+        }
+        file = loader.getPathToAttach(messageObject.getDocument(), true);
+        return file != null && file.exists() ? file : null;
     }
 
     public static boolean hasCredentials() {

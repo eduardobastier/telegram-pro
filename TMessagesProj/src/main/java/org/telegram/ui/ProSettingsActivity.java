@@ -36,6 +36,7 @@ public class ProSettingsActivity extends UniversalFragment {
     private static final int AUTO_TRANSLATE = 9;
     private static final int TRANSCRIBE_PROVIDER = 10;
     private static final int CLOUDFLARE_CREDENTIALS = 11;
+    private static final int AUTO_TRANSCRIBE = 12;
 
     private static final int[] TRANSCRIBE_PROVIDERS = {
         SharedConfig.TRANSCRIBE_PROVIDER_AUTO,
@@ -76,6 +77,7 @@ public class ProSettingsActivity extends UniversalFragment {
 
         items.add(UItem.asHeader(getString(R.string.ProTranscribeHeader)));
         items.add(UItem.asButton(TRANSCRIBE_PROVIDER, getString(R.string.ProTranscribeProvider), getTranscribeProviderName(SharedConfig.transcribeProvider)));
+        items.add(UItem.asCheck(AUTO_TRANSCRIBE, getString(R.string.ProAutoTranscribe)).setChecked(SharedConfig.autoTranscribe));
         if (SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI) {
             items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
         }
@@ -99,6 +101,9 @@ public class ProSettingsActivity extends UniversalFragment {
                 break;
             case AUTO_TRANSLATE:
                 SharedConfig.toggleAutoTranslate();
+                break;
+            case AUTO_TRANSCRIBE:
+                SharedConfig.toggleAutoTranscribe();
                 break;
             case TRANSLATE_STYLE:
                 showChoice(getString(R.string.ProTranslateStyle), new CharSequence[] {

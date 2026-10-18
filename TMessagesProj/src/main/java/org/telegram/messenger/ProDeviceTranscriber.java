@@ -29,9 +29,13 @@ import java.nio.ShortBuffer;
 import java.util.ArrayList;
 
 // Transcribes an audio file with Android's speech recognizer (Android 13+): the file is decoded
-// to 16-bit mono PCM and fed to the recognizer as an audio source in a segmented session, so
-// long voice messages are recognized piece by piece.
+// to 16-bit mono PCM and streamed to the recognizer through a pipe in a segmented session, so
+// long voice messages are recognized piece by piece. The PCM is paced (FEED_SPEED x real time)
+// because the recognizer drops audio that arrives while it is closing a segment after a pause.
 public class ProDeviceTranscriber {
+
+    private static final float FEED_SPEED = 2f;
+    private static final int FEED_CHUNK_MS = 100;
 
     public static void transcribe(File file, ProTranscriber.Callback callback) {
         final Context context = ApplicationLoader.applicationContext;
@@ -72,6 +76,7 @@ public class ProDeviceTranscriber {
         private final long timeoutMs;
         private SpeechRecognizer recognizer;
         private ParcelFileDescriptor source;
+        private Thread feeder;
         private boolean onDevice;
         private boolean finished;
         private final Runnable timeout = this::finishWithText;
@@ -82,13 +87,16 @@ public class ProDeviceTranscriber {
             this.sampleRate = sampleRate;
             this.callback = callback;
             final long durationMs = pcm.length() * 1000L / (2L * sampleRate);
-            this.timeoutMs = durationMs * 2 + 30_000;
+            this.timeoutMs = (long) (durationMs / FEED_SPEED) * 2 + 30_000;
         }
 
         void start(boolean preferOnDevice) {
             onDevice = preferOnDevice && SpeechRecognizer.isOnDeviceRecognitionAvailable(context);
+            final ParcelFileDescriptor sink;
             try {
-                source = ParcelFileDescriptor.open(pcm, ParcelFileDescriptor.MODE_READ_ONLY);
+                final ParcelFileDescriptor[] pipe = ParcelFileDescriptor.createPipe();
+                source = pipe[0];
+                sink = pipe[1];
             } catch (IOException e) {
                 FileLog.e(e);
                 finishWithError(LocaleController.getString(R.string.ProTranscribeDecodeFailed));
@@ -106,13 +114,40 @@ public class ProDeviceTranscriber {
             intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT);
             intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, sampleRate);
             intent.putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_AUDIO_SOURCE);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10_000);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 10_000);
             AndroidUtilities.cancelRunOnUIThread(timeout);
             AndroidUtilities.runOnUIThread(timeout, timeoutMs);
             recognizer.startListening(intent);
+            feeder = new Thread(() -> feed(sink), "ProTranscribeFeeder");
+            feeder.start();
+        }
+
+        // writes the PCM file into the pipe at FEED_SPEED x real time; closing the pipe ends the session
+        private void feed(ParcelFileDescriptor sink) {
+            final int chunkBytes = sampleRate * 2 * FEED_CHUNK_MS / 1000;
+            final long chunkDelayMs = (long) (FEED_CHUNK_MS / FEED_SPEED);
+            try (java.io.FileInputStream in = new java.io.FileInputStream(pcm);
+                 OutputStream out = new ParcelFileDescriptor.AutoCloseOutputStream(sink)) {
+                final byte[] buffer = new byte[chunkBytes];
+                int read;
+                while ((read = in.read(buffer)) > 0) {
+                    out.write(buffer, 0, read);
+                    out.flush();
+                    Thread.sleep(chunkDelayMs);
+                }
+            } catch (InterruptedException ignore) {
+            } catch (IOException e) {
+                // the recognizer closed its end (finished or failed)
+            }
         }
 
         private void release() {
             AndroidUtilities.cancelRunOnUIThread(timeout);
+            if (feeder != null) {
+                feeder.interrupt();
+                feeder = null;
+            }
             if (recognizer != null) {
                 recognizer.destroy();
                 recognizer = null;

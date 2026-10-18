@@ -40,6 +40,7 @@ import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.ProTranscriber;
 import org.telegram.messenger.R;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
@@ -50,6 +51,7 @@ import org.telegram.ui.Cells.ChatMessageCell;
 import java.util.ArrayList;
 import java.io.File;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Objects;
 
 public class TranscribeButton {
@@ -663,6 +665,22 @@ public class TranscribeButton {
         }
     }
 
+    private static final HashSet<Integer> autoTranscribeTried = new HashSet<>();
+
+    // Telegram Pro: transcribe voice/round messages as soon as they are shown and their file is available
+    public static void autoTranscribe(MessageObject messageObject) {
+        if (!SharedConfig.autoTranscribe || messageObject == null || messageObject.messageOwner == null || !messageObject.isSent()) {
+            return;
+        }
+        if (!ProTranscriber.isEnabled(messageObject.currentAccount) || messageObject.messageOwner.voiceTranscription != null || isTranscribing(messageObject)) {
+            return;
+        }
+        if (ProTranscriber.findMediaFile(messageObject) == null || !autoTranscribeTried.add(reqInfoHash(messageObject))) {
+            return;
+        }
+        transcribePressed(messageObject, true, null);
+    }
+
     public static boolean isTranscribing(MessageObject messageObject) {
         return (
             (transcribeOperationsByDialogPosition != null && (transcribeOperationsByDialogPosition.containsValue(messageObject) || transcribeOperationsByDialogPosition.containsKey((Integer) reqInfoHash(messageObject)))) ||
@@ -692,8 +710,8 @@ public class TranscribeButton {
                     FileLog.d("sending Transcription request, msg_id=" + messageId + " dialog_id=" + dialogId);
                 }
                 if (ProTranscriber.isEnabled(account)) {
-                    final File file = FileLoader.getInstance(account).getPathToMessage(messageObject.messageOwner);
-                    if (file == null || !file.exists()) {
+                    final File file = ProTranscriber.findMediaFile(messageObject);
+                    if (file == null) {
                         NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject);
                         NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateTranscriptionLock);
                         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.ProTranscribeDownloadFirst));

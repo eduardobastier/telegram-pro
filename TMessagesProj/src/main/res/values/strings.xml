@@ -2726,6 +2726,7 @@
     <string name="ProAutoTranslate">Tradução automática</string>
     <string name="ProTranscribeHeader">Transcrição de áudio</string>
     <string name="ProTranscribeProvider">Provedor de transcrição</string>
+    <string name="ProAutoTranscribe">Transcrever automaticamente</string>
     <string name="ProTranscribeAuto">Automático</string>
     <string name="ProTranscribePremium">Telegram Premium</string>
     <string name="ProTranscribeWorkersAi">Cloudflare Workers AI</string>
@@ -2744,7 +2745,7 @@
     <string name="ProCloudflareNotSetShort">Não configurado</string>
     <string name="ProCloudflareNotSet">Configure as credenciais da Cloudflare em Configurações → Telegram Pro.</string>
     <string name="ProTranscribeDownloadFirst">Baixe o áudio antes de transcrever.</string>
-    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o reconhecimento de voz do próprio aparelho (grátis, o áudio não sai do celular). Cloudflare Workers AI usa o Whisper na sua conta Cloudflare e precisa de Account ID e API Token.</string>
+    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o reconhecimento de voz do próprio aparelho (grátis, o áudio não sai do celular). Cloudflare Workers AI usa o Whisper na sua conta Cloudflare e precisa de Account ID e API Token. Transcrever automaticamente transcreve áudios e vídeos redondos assim que aparecem no chat e já estão baixados.</string>
     <string name="ProSpeedHeader">Velocidade</string>
     <string name="ProSpeedInfo">Usa partes maiores e mais conexões paralelas para baixar e enviar arquivos.</string>
     <string name="ProTranslateHeader">Tradução</string>
