@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Eduardo Bastier <eduardobastier93@gmail.com>
 Date: Sat, 17 Oct 2026 21:27:55 -0300
-Subject: [PATCH 3/3] Telegram Pro: voice transcription with Whisper on
+Subject: [PATCH 3/4] Telegram Pro: voice transcription with Whisper on
  Cloudflare Workers AI
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

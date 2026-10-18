@@ -1,0 +1,488 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Eduardo Bastier <eduardobastier93@gmail.com>
+Date: Sat, 17 Oct 2026 21:34:56 -0300
+Subject: [PATCH 4/4] Telegram Pro: on-device voice transcription (Android
+ speech recognizer)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../messenger/ProDeviceTranscriber.java       | 284 ++++++++++++++++++
+ .../telegram/messenger/ProTranscriber.java    |  17 +-
+ .../org/telegram/messenger/SharedConfig.java  |   1 +
+ .../telegram/ui/Cells/ChatMessageCell.java    |   2 +-
+ .../ui/Components/TranscribeButton.java       |   6 +-
+ .../org/telegram/ui/ProSettingsActivity.java  |  20 +-
+ TMessagesProj/src/main/res/values/strings.xml |  10 +-
+ 7 files changed, 328 insertions(+), 12 deletions(-)
+ create mode 100644 TMessagesProj/src/main/java/org/telegram/messenger/ProDeviceTranscriber.java
+
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ProDeviceTranscriber.java b/TMessagesProj/src/main/java/org/telegram/messenger/ProDeviceTranscriber.java
+new file mode 100644
+index 0000000..c65225b
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ProDeviceTranscriber.java
+@@ -0,0 +1,284 @@
++package org.telegram.messenger;
++
++import android.Manifest;
++import android.content.Context;
++import android.content.Intent;
++import android.content.pm.PackageManager;
++import android.media.AudioFormat;
++import android.media.MediaCodec;
++import android.media.MediaExtractor;
++import android.media.MediaFormat;
++import android.os.Build;
++import android.os.Bundle;
++import android.os.ParcelFileDescriptor;
++import android.speech.RecognitionListener;
++import android.speech.RecognizerIntent;
++import android.speech.SpeechRecognizer;
++import android.text.TextUtils;
++
++import androidx.annotation.RequiresApi;
++
++import java.io.BufferedOutputStream;
++import java.io.File;
++import java.io.FileOutputStream;
++import java.io.IOException;
++import java.io.OutputStream;
++import java.nio.ByteBuffer;
++import java.nio.ByteOrder;
++import java.nio.ShortBuffer;
++import java.util.ArrayList;
++
++// Transcribes an audio file with Android's speech recognizer (Android 13+): the file is decoded
++// to 16-bit mono PCM and fed to the recognizer as an audio source in a segmented session, so
++// long voice messages are recognized piece by piece.
++public class ProDeviceTranscriber {
++
++    public static void transcribe(File file, ProTranscriber.Callback callback) {
++        final Context context = ApplicationLoader.applicationContext;
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
++            callback.run(null, LocaleController.getString(R.string.ProTranscribeDeviceUnsupported));
++            return;
++        }
++        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
++            callback.run(null, LocaleController.getString(R.string.ProTranscribeDeviceUnavailable));
++            return;
++        }
++        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
++            callback.run(null, LocaleController.getString(R.string.ProTranscribeMicPermission));
++            return;
++        }
++        Utilities.globalQueue.postRunnable(() -> {
++            final File pcm = new File(context.getCacheDir(), "pro_transcribe_" + Utilities.random.nextLong() + ".pcm");
++            final int sampleRate;
++            try {
++                sampleRate = decodeToMonoPcm(file, pcm);
++            } catch (Exception e) {
++                FileLog.e(e);
++                pcm.delete();
++                callback.run(null, LocaleController.getString(R.string.ProTranscribeDecodeFailed));
++                return;
++            }
++            AndroidUtilities.runOnUIThread(() -> new Session(context, pcm, sampleRate, callback).start(true));
++        });
++    }
++
++    @RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
++    private static class Session implements RecognitionListener {
++        private final Context context;
++        private final File pcm;
++        private final int sampleRate;
++        private final ProTranscriber.Callback callback;
++        private final ArrayList<String> segments = new ArrayList<>();
++        private final long timeoutMs;
++        private SpeechRecognizer recognizer;
++        private ParcelFileDescriptor source;
++        private boolean onDevice;
++        private boolean finished;
++        private final Runnable timeout = this::finishWithText;
++
++        Session(Context context, File pcm, int sampleRate, ProTranscriber.Callback callback) {
++            this.context = context;
++            this.pcm = pcm;
++            this.sampleRate = sampleRate;
++            this.callback = callback;
++            final long durationMs = pcm.length() * 1000L / (2L * sampleRate);
++            this.timeoutMs = durationMs * 2 + 30_000;
++        }
++
++        void start(boolean preferOnDevice) {
++            onDevice = preferOnDevice && SpeechRecognizer.isOnDeviceRecognitionAvailable(context);
++            try {
++                source = ParcelFileDescriptor.open(pcm, ParcelFileDescriptor.MODE_READ_ONLY);
++            } catch (IOException e) {
++                FileLog.e(e);
++                finishWithError(LocaleController.getString(R.string.ProTranscribeDecodeFailed));
++                return;
++            }
++            recognizer = onDevice ? SpeechRecognizer.createOnDeviceSpeechRecognizer(context) : SpeechRecognizer.createSpeechRecognizer(context);
++            recognizer.setRecognitionListener(this);
++
++            final Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
++            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
++            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, LocaleController.getInstance().getCurrentLocale().toLanguageTag());
++            intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
++            intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, source);
++            intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1);
++            intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT);
++            intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, sampleRate);
++            intent.putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_AUDIO_SOURCE);
++            AndroidUtilities.cancelRunOnUIThread(timeout);
++            AndroidUtilities.runOnUIThread(timeout, timeoutMs);
++            recognizer.startListening(intent);
++        }
++
++        private void release() {
++            AndroidUtilities.cancelRunOnUIThread(timeout);
++            if (recognizer != null) {
++                recognizer.destroy();
++                recognizer = null;
++            }
++            if (source != null) {
++                try {
++                    source.close();
++                } catch (IOException ignore) {}
++                source = null;
++            }
++        }
++
++        private void finishWithText() {
++            if (finished) return;
++            final String text = TextUtils.join(" ", segments).trim();
++            if (text.isEmpty()) {
++                finishWithError(LocaleController.getString(R.string.ProTranscribeNothingRecognized));
++                return;
++            }
++            finished = true;
++            release();
++            pcm.delete();
++            callback.run(text, null);
++        }
++
++        private void finishWithError(String error) {
++            if (finished) return;
++            finished = true;
++            release();
++            pcm.delete();
++            callback.run(null, error);
++        }
++
++        private void addResults(Bundle results) {
++            final ArrayList<String> matches = results == null ? null : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
++            if (matches != null && !matches.isEmpty() && !TextUtils.isEmpty(matches.get(0))) {
++                segments.add(matches.get(0).trim());
++            }
++        }
++
++        @Override
++        public void onSegmentResults(Bundle segmentResults) {
++            addResults(segmentResults);
++        }
++
++        @Override
++        public void onEndOfSegmentedSession() {
++            finishWithText();
++        }
++
++        @Override
++        public void onResults(Bundle results) {
++            addResults(results);
++            finishWithText();
++        }
++
++        @Override
++        public void onError(int error) {
++            if (finished) return;
++            if (!segments.isEmpty()) {
++                finishWithText();
++            } else if (onDevice) {
++                // the on-device recognizer may not accept file input or the language; retry with the default service
++                release();
++                start(false);
++            } else if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
++                finishWithError(LocaleController.getString(R.string.ProTranscribeLanguageUnavailable));
++            } else if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
++                finishWithError(LocaleController.getString(R.string.ProTranscribeNothingRecognized));
++            } else {
++                finishWithError(LocaleController.formatString(R.string.ProTranscribeDeviceError, error));
++            }
++        }
++
++        @Override public void onReadyForSpeech(Bundle params) {}
++        @Override public void onBeginningOfSpeech() {}
++        @Override public void onRmsChanged(float rmsdB) {}
++        @Override public void onBufferReceived(byte[] buffer) {}
++        @Override public void onEndOfSpeech() {}
++        @Override public void onPartialResults(Bundle partialResults) {}
++        @Override public void onEvent(int eventType, Bundle params) {}
++    }
++
++    // Decodes the first audio track to 16-bit little-endian mono PCM; returns its sample rate.
++    private static int decodeToMonoPcm(File input, File output) throws IOException {
++        final MediaExtractor extractor = new MediaExtractor();
++        MediaCodec codec = null;
++        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
++            extractor.setDataSource(input.getAbsolutePath());
++            MediaFormat format = null;
++            for (int i = 0; i < extractor.getTrackCount(); i++) {
++                final MediaFormat f = extractor.getTrackFormat(i);
++                final String mime = f.getString(MediaFormat.KEY_MIME);
++                if (mime != null && mime.startsWith("audio/")) {
++                    extractor.selectTrack(i);
++                    format = f;
++                    break;
++                }
++            }
++            if (format == null) {
++                throw new IOException("No audio track in " + input);
++            }
++            codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME));
++            codec.configure(format, null, null, 0);
++            codec.start();
++
++            int sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
++            int channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
++            final MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
++            boolean inputDone = false;
++            byte[] chunk = new byte[0];
++            while (true) {
++                if (!inputDone) {
++                    final int inIndex = codec.dequeueInputBuffer(10_000);
++                    if (inIndex >= 0) {
++                        final ByteBuffer inBuffer = codec.getInputBuffer(inIndex);
++                        final int size = extractor.readSampleData(inBuffer, 0);
++                        if (size < 0) {
++                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
++                            inputDone = true;
++                        } else {
++                            codec.queueInputBuffer(inIndex, 0, size, extractor.getSampleTime(), 0);
++                            extractor.advance();
++                        }
++                    }
++                }
++                final int outIndex = codec.dequeueOutputBuffer(info, 10_000);
++                if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
++                    final MediaFormat outFormat = codec.getOutputFormat();
++                    sampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
++                    channels = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
++                } else if (outIndex >= 0) {
++                    final ByteBuffer outBuffer = codec.getOutputBuffer(outIndex);
++                    if (outBuffer != null && info.size > 0) {
++                        outBuffer.position(info.offset).limit(info.offset + info.size);
++                        final ShortBuffer samples = outBuffer.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer();
++                        final int frames = samples.remaining() / channels;
++                        if (chunk.length < frames * 2) {
++                            chunk = new byte[frames * 2];
++                        }
++                        for (int frame = 0; frame < frames; frame++) {
++                            int sum = 0;
++                            for (int c = 0; c < channels; c++) {
++                                sum += samples.get();
++                            }
++                            final short mono = (short) (sum / channels);
++                            chunk[frame * 2] = (byte) (mono & 0xff);
++                            chunk[frame * 2 + 1] = (byte) ((mono >> 8) & 0xff);
++                        }
++                        out.write(chunk, 0, frames * 2);
++                    }
++                    codec.releaseOutputBuffer(outIndex, false);
++                    if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
++                        break;
++                    }
++                }
++            }
++            return sampleRate;
++        } finally {
++            if (codec != null) {
++                try {
++                    codec.stop();
++                } catch (Exception ignore) {}
++                codec.release();
++            }
++            extractor.release();
++        }
++    }
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java b/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
+index c0440ef..634e9da 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
+@@ -24,7 +24,8 @@ import okhttp3.Request;
+ import okhttp3.RequestBody;
+ import okhttp3.Response;
+ 
+-// Voice/round message transcription with Whisper on Cloudflare Workers AI (same approach as Nekogram's WhisperHelper)
++// Voice/round message transcription without Premium: on-device Android speech recognition,
++// or Whisper on Cloudflare Workers AI (same approach as Nekogram's WhisperHelper)
+ public class ProTranscriber {
+ 
+     private static final ExecutorService executor = Executors.newCachedThreadPool();
+@@ -34,8 +35,10 @@ public class ProTranscriber {
+         void run(String text, String error);
+     }
+ 
+-    public static boolean useWorkersAi(int account) {
++    // true when transcription is handled here instead of Telegram's Premium transcribeAudio
++    public static boolean isEnabled(int account) {
+         return SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI ||
++            SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_DEVICE ||
+             SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_AUTO && !UserConfig.getInstance(account).isPremium();
+     }
+ 
+@@ -43,8 +46,16 @@ public class ProTranscriber {
+         return !TextUtils.isEmpty(SharedConfig.cfAccountId) && !TextUtils.isEmpty(SharedConfig.cfApiToken);
+     }
+ 
+-    // callback runs on a background thread
++    // callback may run on any thread
+     public static void transcribe(File file, boolean video, Callback callback) {
++        if (SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI) {
++            transcribeWorkersAi(file, video, callback);
++        } else {
++            ProDeviceTranscriber.transcribe(file, callback);
++        }
++    }
++
++    private static void transcribeWorkersAi(File file, boolean video, Callback callback) {
+         if (!hasCredentials()) {
+             callback.run(null, LocaleController.getString(R.string.ProCloudflareNotSet));
+             return;
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java b/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
+index 7bac8c6..ebda9cb 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
+@@ -279,6 +279,7 @@ public class SharedConfig {
+     public static final int TRANSCRIBE_PROVIDER_AUTO = 0;
+     public static final int TRANSCRIBE_PROVIDER_PREMIUM = 1;
+     public static final int TRANSCRIBE_PROVIDER_WORKERS_AI = 2;
++    public static final int TRANSCRIBE_PROVIDER_DEVICE = 3;
+     public static int transcribeProvider;
+     public static String cfAccountId;
+     public static String cfApiToken;
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+index c2b5e42..ce896c7 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+@@ -12666,7 +12666,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+             (
+                 UserConfig.getInstance(currentAccount).isPremium()
+                 ||
+-                ProTranscriber.useWorkersAi(currentAccount)
++                ProTranscriber.isEnabled(currentAccount)
+                 ||
+                 TranscribeButton.isFreeTranscribeInChat(currentMessageObject)
+                 ||
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java b/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
+index 815e11f..ff2bbd2 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
+@@ -116,7 +116,7 @@ public class TranscribeButton {
+ 
+         this.isOpen = false;
+         this.shouldBeOpen = false;
+-        premium = parent.getMessageObject() != null && (UserConfig.getInstance(parent.getMessageObject().currentAccount).isPremium() || ProTranscriber.useWorkersAi(parent.getMessageObject().currentAccount));
++        premium = parent.getMessageObject() != null && (UserConfig.getInstance(parent.getMessageObject().currentAccount).isPremium() || ProTranscriber.isEnabled(parent.getMessageObject().currentAccount));
+ 
+         loadingFloat = new AnimatedFloat(parent, 250, CubicBezierInterpolator.EASE_OUT_QUINT);
+         animatedDrawLock = new AnimatedFloat(parent, 250, CubicBezierInterpolator.EASE_OUT_QUINT);
+@@ -691,7 +691,7 @@ public class TranscribeButton {
+                 if (BuildVars.LOGS_ENABLED) {
+                     FileLog.d("sending Transcription request, msg_id=" + messageId + " dialog_id=" + dialogId);
+                 }
+-                if (ProTranscriber.useWorkersAi(account)) {
++                if (ProTranscriber.isEnabled(account)) {
+                     final File file = FileLoader.getInstance(account).getPathToMessage(messageObject.messageOwner);
+                     if (file == null || !file.exists()) {
+                         NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject);
+@@ -900,7 +900,7 @@ public class TranscribeButton {
+         if (messageObject == null || messageObject.messageOwner == null) {
+             return false;
+         }
+-        if (ProTranscriber.useWorkersAi(messageObject.currentAccount)) {
++        if (ProTranscriber.isEnabled(messageObject.currentAccount)) {
+             return false;
+         }
+         if (isFreeTranscribeInChat(messageObject)) {
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
+index 6e10657..dbbb494 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
+@@ -37,6 +37,13 @@ public class ProSettingsActivity extends UniversalFragment {
+     private static final int TRANSCRIBE_PROVIDER = 10;
+     private static final int CLOUDFLARE_CREDENTIALS = 11;
+ 
++    private static final int[] TRANSCRIBE_PROVIDERS = {
++        SharedConfig.TRANSCRIBE_PROVIDER_AUTO,
++        SharedConfig.TRANSCRIBE_PROVIDER_DEVICE,
++        SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI,
++        SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM
++    };
++
+     @Override
+     public void onResume() {
+         super.onResume();
+@@ -69,7 +76,9 @@ public class ProSettingsActivity extends UniversalFragment {
+ 
+         items.add(UItem.asHeader(getString(R.string.ProTranscribeHeader)));
+         items.add(UItem.asButton(TRANSCRIBE_PROVIDER, getString(R.string.ProTranscribeProvider), getTranscribeProviderName(SharedConfig.transcribeProvider)));
+-        items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
++        if (SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI) {
++            items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
++        }
+         items.add(UItem.asShadow(getString(R.string.ProTranscribeInfo)));
+     }
+ 
+@@ -110,9 +119,10 @@ public class ProSettingsActivity extends UniversalFragment {
+             case TRANSCRIBE_PROVIDER:
+                 showChoice(getString(R.string.ProTranscribeProvider), new CharSequence[] {
+                     getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_AUTO),
+-                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM),
+-                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI)
+-                }, SharedConfig::setTranscribeProvider);
++                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_DEVICE),
++                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI),
++                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM)
++                }, which -> SharedConfig.setTranscribeProvider(TRANSCRIBE_PROVIDERS[which]));
+                 return;
+             case CLOUDFLARE_CREDENTIALS:
+                 showCloudflareCredentials();
+@@ -202,6 +212,8 @@ public class ProSettingsActivity extends UniversalFragment {
+                 return getString(R.string.ProTranscribePremium);
+             case SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI:
+                 return getString(R.string.ProTranscribeWorkersAi);
++            case SharedConfig.TRANSCRIBE_PROVIDER_DEVICE:
++                return getString(R.string.ProTranscribeDevice);
+             default:
+                 return getString(R.string.ProTranscribeAuto);
+         }
+diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
+index 6c86148..3df7a8b 100644
+--- a/TMessagesProj/src/main/res/values/strings.xml
++++ b/TMessagesProj/src/main/res/values/strings.xml
+@@ -2729,6 +2729,14 @@
+     <string name="ProTranscribeAuto">Automático</string>
+     <string name="ProTranscribePremium">Telegram Premium</string>
+     <string name="ProTranscribeWorkersAi">Cloudflare Workers AI</string>
++    <string name="ProTranscribeDevice">No aparelho (Android)</string>
++    <string name="ProTranscribeDeviceUnsupported">Transcrição no aparelho requer Android 13 ou superior.</string>
++    <string name="ProTranscribeDeviceUnavailable">Nenhum serviço de reconhecimento de voz disponível no aparelho.</string>
++    <string name="ProTranscribeMicPermission">Permita o acesso ao microfone do Telegram Pro para transcrever no aparelho.</string>
++    <string name="ProTranscribeDecodeFailed">Não foi possível ler o áudio.</string>
++    <string name="ProTranscribeNothingRecognized">Nenhuma fala reconhecida.</string>
++    <string name="ProTranscribeLanguageUnavailable">Idioma não disponível para reconhecimento no aparelho. Baixe o pacote de idioma em Configurações do Android → Serviços de fala do Google.</string>
++    <string name="ProTranscribeDeviceError">Erro no reconhecimento de voz (%1$d).</string>
+     <string name="ProCloudflareCredentials">Credenciais da Cloudflare</string>
+     <string name="ProCloudflareAccountId">Account ID</string>
+     <string name="ProCloudflareApiToken">API Token</string>
+@@ -2736,7 +2744,7 @@
+     <string name="ProCloudflareNotSetShort">Não configurado</string>
+     <string name="ProCloudflareNotSet">Configure as credenciais da Cloudflare em Configurações → Telegram Pro.</string>
+     <string name="ProTranscribeDownloadFirst">Baixe o áudio antes de transcrever.</string>
+-    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o Whisper na sua conta Cloudflare (cota grátis diária). Crie um API Token com permissão \"Workers AI\" em dash.cloudflare.com.</string>
++    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o reconhecimento de voz do próprio aparelho (grátis, o áudio não sai do celular). Cloudflare Workers AI usa o Whisper na sua conta Cloudflare e precisa de Account ID e API Token.</string>
+     <string name="ProSpeedHeader">Velocidade</string>
+     <string name="ProSpeedInfo">Usa partes maiores e mais conexões paralelas para baixar e enviar arquivos.</string>
+     <string name="ProTranslateHeader">Tradução</string>
