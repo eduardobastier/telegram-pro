@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.0
+- Atualização OTA: o app avisa quando sai versão nova e instala direto das releases do GitHub
+- Opção de verificar atualizações automaticamente e botão "Verificar agora"
+
 ## v1.1.0
 - Transcrição de áudios e vídeos redondos sem Premium
 - Provedores de transcrição: no aparelho (grátis, offline) e Cloudflare Workers AI (Whisper)
