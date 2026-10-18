@@ -2,13 +2,19 @@ package org.telegram.ui;
 
 import static org.telegram.messenger.LocaleController.getString;
 
+import android.util.TypedValue;
 import android.view.View;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 
+import org.telegram.messenger.ProTranscriber;
 import org.telegram.messenger.ProTranslators;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.TranslateController;
 import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.TranslateAlert2;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
@@ -28,6 +34,8 @@ public class ProSettingsActivity extends UniversalFragment {
     private static final int TRANSLATE_TO = 7;
     private static final int DO_NOT_TRANSLATE = 8;
     private static final int AUTO_TRANSLATE = 9;
+    private static final int TRANSCRIBE_PROVIDER = 10;
+    private static final int CLOUDFLARE_CREDENTIALS = 11;
 
     @Override
     public void onResume() {
@@ -58,6 +66,11 @@ public class ProSettingsActivity extends UniversalFragment {
         items.add(UItem.asButton(DO_NOT_TRANSLATE, getString(R.string.ProDoNotTranslate), getRestrictedLanguagesValue()));
         items.add(UItem.asCheck(AUTO_TRANSLATE, getString(R.string.ProAutoTranslate)).setChecked(SharedConfig.autoTranslate));
         items.add(UItem.asShadow(getString(R.string.ProTranslateInfo)));
+
+        items.add(UItem.asHeader(getString(R.string.ProTranscribeHeader)));
+        items.add(UItem.asButton(TRANSCRIBE_PROVIDER, getString(R.string.ProTranscribeProvider), getTranscribeProviderName(SharedConfig.transcribeProvider)));
+        items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
+        items.add(UItem.asShadow(getString(R.string.ProTranscribeInfo)));
     }
 
     @Override
@@ -93,6 +106,16 @@ public class ProSettingsActivity extends UniversalFragment {
                 return;
             case TRANSLATE_TO:
                 showLanguageChoice();
+                return;
+            case TRANSCRIBE_PROVIDER:
+                showChoice(getString(R.string.ProTranscribeProvider), new CharSequence[] {
+                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_AUTO),
+                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM),
+                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI)
+                }, SharedConfig::setTranscribeProvider);
+                return;
+            case CLOUDFLARE_CREDENTIALS:
+                showCloudflareCredentials();
                 return;
             case DO_NOT_TRANSLATE:
                 presentFragment(new RestrictedLanguagesSelectActivity());
@@ -138,6 +161,50 @@ public class ProSettingsActivity extends UniversalFragment {
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
         showDialog(builder.create());
+    }
+
+    private void showCloudflareCredentials() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final LinearLayout layout = new LinearLayout(getParentActivity());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        final EditText accountId = createInput(getString(R.string.ProCloudflareAccountId), SharedConfig.cfAccountId);
+        final EditText apiToken = createInput(getString(R.string.ProCloudflareApiToken), SharedConfig.cfApiToken);
+        layout.addView(accountId, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 24, 8, 24, 0));
+        layout.addView(apiToken, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 24, 8, 24, 0));
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(getString(R.string.ProCloudflareCredentials));
+        builder.setView(layout);
+        builder.setPositiveButton(getString(R.string.OK), (dialog, which) -> {
+            SharedConfig.setCloudflareCredentials(accountId.getText().toString().trim(), apiToken.getText().toString().trim());
+            listView.adapter.update(true);
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    private EditText createInput(String hint, String value) {
+        final EditText editText = new EditText(getParentActivity());
+        editText.setHint(hint);
+        editText.setText(value);
+        editText.setSingleLine(true);
+        editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        editText.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
+        return editText;
+    }
+
+    private static String getTranscribeProviderName(int provider) {
+        switch (provider) {
+            case SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM:
+                return getString(R.string.ProTranscribePremium);
+            case SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI:
+                return getString(R.string.ProTranscribeWorkersAi);
+            default:
+                return getString(R.string.ProTranscribeAuto);
+        }
     }
 
     private static String getStyleName(int style) {

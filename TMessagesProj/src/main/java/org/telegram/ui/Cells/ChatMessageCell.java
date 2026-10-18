@@ -127,6 +127,7 @@ import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.ProTranscriber;
 import org.telegram.messenger.R;
 import org.telegram.messenger.RichMessageLayout;
 import org.telegram.messenger.SendMessagesHelper;
@@ -12664,6 +12665,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             (!currentMessageObject.isOutOwner() || currentMessageObject.isSent()) &&
             (
                 UserConfig.getInstance(currentAccount).isPremium()
+                ||
+                ProTranscriber.useWorkersAi(currentAccount)
                 ||
                 TranscribeButton.isFreeTranscribeInChat(currentMessageObject)
                 ||
