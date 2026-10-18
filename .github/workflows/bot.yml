@@ -1,8 +1,9 @@
 name: CI bot
 
-# Polls the Telegram bot for commands sent by the admin in the private CI group:
-# /buildmain, /builddev, /release, /update, /status, /help.
-# GitHub cannot receive Telegram webhooks, so this runs every 5 minutes (GitHub may delay schedules).
+# Keeps the CI bot online: long-polls Telegram for commands sent by the admin in the private
+# CI group (/buildmain, /builddev, /release, /update, /status, /help) and answers right away.
+# A run lasts ~5h50 (GitHub's job limit is 6 h); the schedule queues the next one, which starts
+# as soon as the current run ends.
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -16,106 +17,21 @@ concurrency:
   group: ci-bot
   cancel-in-progress: false
 
-env:
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  CI_CHAT_ID: ${{ secrets.CI_CHAT_ID }}
-  CI_ADMIN_ID: ${{ secrets.CI_ADMIN_ID }}
-  GH_TOKEN: ${{ github.token }}
-
 jobs:
-  poll:
+  bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 358
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Read commands
-        run: |
-          API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
-          curl -sS "$API/getUpdates?allowed_updates=%5B%22message%22%5D" > updates.json
-          # only text commands from the admin, in the CI group; acknowledge everything that was read
-          python3 - <<'PY'
-          import json, os
-          data = json.load(open('updates.json'))
-          updates = data.get('result', [])
-          commands = []
-          for u in updates:
-              m = u.get('message') or {}
-              if str(m.get('chat', {}).get('id')) != os.environ['CI_CHAT_ID']:
-                  continue
-              if str(m.get('from', {}).get('id')) != os.environ['CI_ADMIN_ID']:
-                  continue
-              text = (m.get('text') or '').strip()
-              if text.startswith('/'):
-                  commands.append(text)
-          open('commands.txt', 'w').write('\n'.join(commands))
-          open('offset.txt', 'w').write(str(updates[-1]['update_id'] + 1) if updates else '')
-          PY
-          if [ -s offset.txt ]; then curl -sS -o /dev/null "$API/getUpdates?offset=$(cat offset.txt)&timeout=0"; fi
-          cat commands.txt
-
-      - name: Run commands
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
-          while IFS= read -r line; do
-            [ -z "$line" ] && continue
-            cmd=$(echo "$line" | awk '{print $1}' | cut -d@ -f1)
-            arg=$(echo "$line" | awk '{print $2}')
-            case "$cmd" in
-              /buildmain|/builddev)
-                branch="${cmd#/build}"
-                gh workflow run build.yml --ref main -f branch="$branch"
-                .github/scripts/tg.sh send "▶️ Build da <code>${branch}</code> solicitado. <a href=\"${REPO_URL}/actions/workflows/build.yml\">Acompanhar</a>"
-                ;;
-              /release)
-                git fetch -q origin main dev
-                version=$(git show origin/dev:CHANGELOG.md | grep -m1 -o '^## v[0-9]*\.[0-9]*\.[0-9]*' | cut -c4-)
-                if gh release view "$version" > /dev/null 2>&1; then
-                  .github/scripts/tg.sh send "⚠️ ${version} já foi publicada. Adicione uma versão nova no CHANGELOG.md da dev."
-                  continue
-                fi
-                git checkout -q -B main origin/main
-                if git merge --no-edit -m "Release ${version}" origin/dev && git push origin main; then
-                  gh workflow run build.yml --ref main -f branch=main
-                  .github/scripts/tg.sh send "🚀 dev → main (${version}). Build iniciado; a Release e o post no canal saem ao terminar."
-                else
-                  git merge --abort 2>/dev/null || true
-                  .github/scripts/tg.sh send "❌ Não foi possível levar a dev para a main (conflito ou push recusado). Faça o merge manualmente."
-                fi
-                ;;
-              /update)
-                gh workflow run update-upstream.yml --ref main
-                .github/scripts/tg.sh send "🔄 Verificando nova versão do Telegram oficial…"
-                ;;
-              /status)
-                git fetch -q origin main dev
-                version_of() { git show "origin/$1:CHANGELOG.md" | grep -m1 -o '^## v[0-9]*\.[0-9]*\.[0-9]*' | cut -c4-; }
-                gh run list --limit 40 --json workflowName,status,conclusion,headBranch,displayTitle,url,createdAt,updatedAt > runs.json
-                latest=$(gh release view --json tagName --jq .tagName 2>/dev/null || echo "nenhuma")
-                .github/scripts/tg.sh send "$(python3 .github/scripts/status.py runs.json "$latest" "$(version_of main)" "$(version_of dev)")"
-                ;;
-              /help|/start)
-                .github/scripts/tg.sh send "🤖 <b>Telegram Pro CI — ajuda</b>
-
-          /buildmain — compila a branch <code>main</code>. Se a versão do topo do CHANGELOG.md ainda não tiver release, cria a GitHub Release e posta o APK no canal; senão só compila.
-
-          /builddev — compila a branch <code>dev</code> e envia o APK só aqui no grupo, para teste. Não cria release nem posta no canal.
-
-          /release — leva a <code>dev</code> para a <code>main</code> e publica a versão do topo do CHANGELOG.md (Release + canal). Recusa se essa versão já foi publicada.
-
-          /update — verifica agora se saiu versão nova do Telegram oficial; se sim, faz merge, cria a próxima versão e publica.
-
-          /status — mostra os últimos builds e a última release.
-
-          /help — esta mensagem.
-
-          ⏱ Os comandos são lidos a cada ~5 min (o GitHub pode atrasar). Avisos de início, fim e falha dos builds chegam aqui automaticamente."
-                ;;
-              *)
-                .github/scripts/tg.sh send "❓ Comando desconhecido: <code>${cmd}</code>. Envie /help para ver os comandos."
-                ;;
-            esac
-          done < commands.txt
+      - name: Answer commands
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CI_CHAT_ID: ${{ secrets.CI_CHAT_ID }}
+          CI_ADMIN_ID: ${{ secrets.CI_ADMIN_ID }}
+          GH_TOKEN: ${{ github.token }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          STOP_AFTER: "21000"
+        run: .github/scripts/bot.sh
