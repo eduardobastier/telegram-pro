@@ -140,6 +140,12 @@ android {
         minSdkVersion 23
         targetSdkVersion 36
 
+        // Telegram Pro: version is the top "## vX.Y.Z" entry of CHANGELOG.md (used by the OTA updater)
+        def changelog = rootProject.file("CHANGELOG.md")
+        def proVersion = changelog.exists() ? (changelog.text =~ /(?m)^## (v\d+\.\d+\.\d+)/).with { it.find() ? it.group(1) : "v0.0.0" } : "v0.0.0"
+        proVersion = project.findProperty("PRO_VERSION_OVERRIDE") ?: proVersion // testing the updater only
+        buildConfigField "String", "PRO_VERSION", "\"" + proVersion + "\""
+
         // Telegram Pro: API credentials come from -PPRO_APP_ID/-PPRO_APP_HASH, ~/.gradle/gradle.properties or env
         buildConfigField "int", "PRO_APP_ID", (project.findProperty("PRO_APP_ID") ?: System.getenv("PRO_APP_ID") ?: "4").toString()
         buildConfigField "String", "PRO_APP_HASH", "\"" + (project.findProperty("PRO_APP_HASH") ?: System.getenv("PRO_APP_HASH") ?: "014b35b6184100b085b0d0572f9b5103") + "\""
