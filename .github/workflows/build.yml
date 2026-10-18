@@ -1,0 +1,143 @@
+name: Build
+
+# Every commit on main is built. When the top version in CHANGELOG.md has no release yet,
+# a GitHub Release is created with the APK and the APK is posted to the Telegram channel.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Android NDK and CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        env:
+          PRO_APP_ID: ${{ secrets.PRO_APP_ID }}
+          PRO_APP_HASH: ${{ secrets.PRO_APP_HASH }}
+          PRO_KEYSTORE_BASE64: ${{ secrets.PRO_KEYSTORE_BASE64 }}
+          PRO_KEYSTORE_PASSWORD: ${{ secrets.PRO_KEYSTORE_PASSWORD }}
+          PRO_KEY_ALIAS: ${{ secrets.PRO_KEY_ALIAS }}
+          PRO_KEY_PASSWORD: ${{ secrets.PRO_KEY_PASSWORD }}
+        run: |
+          echo "$PRO_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/telegrampro.jks"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          PRO_KEYSTORE_FILE="$RUNNER_TEMP/telegrampro.jks" ./gradlew :TMessagesProj_App:assembleAfatRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx6g
+          rm -f "$RUNNER_TEMP/telegrampro.jks"
+
+      - name: Collect APK and release notes
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 -o '^## v[0-9]*\.[0-9]*\.[0-9]*' CHANGELOG.md | cut -c4-)
+          BASE_VERSION=$(grep '^APP_VERSION_NAME=' gradle.properties | cut -d= -f2)
+          # latest official Telegram commit in our history (not authored by us or the bot)
+          BASE_REF=$(git log -1 --format=%H --perl-regexp --author='^(?!Eduardo Bastier|github-actions)')
+          APK="TelegramPro-${VERSION}-${BASE_VERSION}-arm64.apk"
+          cp TMessagesProj_App/build/outputs/apk/afat/release/app.apk "$APK"
+          awk -v v="## $VERSION" '/^## /{ if (found) exit; if ($0 == v) { found=1; next } } found' CHANGELOG.md | sed '/^$/d' > notes.txt
+          if gh release view "$VERSION" > /dev/null 2>&1; then NEW=false; else NEW=true; fi
+          {
+            echo "apk=$APK"
+            echo "version=$VERSION"
+            echo "base_version=$BASE_VERSION"
+            echo "base_ref=$BASE_REF"
+            echo "new=$NEW"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION (new release: $NEW), base Telegram $BASE_VERSION @ $BASE_REF"
+          cat notes.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.apk }}
+          path: ${{ steps.meta.outputs.apk }}
+
+      - name: Create GitHub Release
+        if: steps.meta.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.meta.outputs.apk }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          BASE_VERSION: ${{ steps.meta.outputs.base_version }}
+          BASE_REF: ${{ steps.meta.outputs.base_ref }}
+        run: |
+          {
+            echo "Base: [Telegram ${BASE_VERSION}](https://github.com/DrKLO/Telegram/commit/${BASE_REF})"
+            echo
+            echo "### Novidades"
+            cat notes.txt
+          } > release.md
+          gh release create "$VERSION" "$APK" --target "$GITHUB_SHA" --title "Telegram Pro $VERSION" --notes-file release.md
+
+      - name: Send to Telegram channel
+        if: steps.meta.outputs.new == 'true'
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          APK: ${{ steps.meta.outputs.apk }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          BASE_VERSION: ${{ steps.meta.outputs.base_version }}
+          BASE_REF: ${{ steps.meta.outputs.base_ref }}
+        run: |
+          esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+          {
+            echo "<b>Telegram Pro ${VERSION}</b>"
+            echo
+            echo "Base: <a href=\"https://github.com/DrKLO/Telegram/commit/${BASE_REF}\">Telegram ${BASE_VERSION}</a>"
+            echo
+            echo "<pre>Novidades:"
+            sed 's/^- /• /' notes.txt | esc
+            echo "</pre>"
+            echo
+            echo "Android arm64 • Instale por cima para atualizar"
+          } > caption.txt
+          # Telegram captions are limited to 1024 characters: drop note lines (keeping the <pre> block closed) until it fits
+          python3 - <<'PY'
+          lines = open('caption.txt').read().split('\n')
+          start = next(i for i, line in enumerate(lines) if line.startswith('<pre>'))
+          end = lines.index('</pre>')
+          trimmed = False
+          while len('\n'.join(lines)) > 1020 and end - start > 1:
+              del lines[end - 1]
+              end -= 1
+              trimmed = True
+          if trimmed:
+              lines.insert(end, '…')
+          open('caption_final.txt', 'w').write('\n'.join(lines))
+          PY
+          curl -sS --fail-with-body "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+            -F chat_id="${CHAT_ID}" \
+            -F parse_mode=HTML \
+            -F caption="<caption_final.txt" \
+            -F document=@"${APK}"
