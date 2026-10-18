@@ -1,0 +1,476 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Eduardo Bastier <eduardobastier93@gmail.com>
+Date: Sat, 17 Oct 2026 21:27:55 -0300
+Subject: [PATCH 3/3] Telegram Pro: voice transcription with Whisper on
+ Cloudflare Workers AI
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../telegram/messenger/ProTranscriber.java    | 161 ++++++++++++++++++
+ .../org/telegram/messenger/SharedConfig.java  |  20 +++
+ .../telegram/ui/Cells/ChatMessageCell.java    |   3 +
+ .../ui/Components/TranscribeButton.java       |  48 +++++-
+ .../org/telegram/ui/ProSettingsActivity.java  |  67 ++++++++
+ TMessagesProj/src/main/res/values/strings.xml |  13 ++
+ 6 files changed, 311 insertions(+), 1 deletion(-)
+ create mode 100644 TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
+
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java b/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
+new file mode 100644
+index 0000000..c0440ef
+--- /dev/null
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
+@@ -0,0 +1,161 @@
++package org.telegram.messenger;
++
++import android.media.MediaCodec;
++import android.media.MediaExtractor;
++import android.media.MediaFormat;
++import android.media.MediaMuxer;
++import android.text.TextUtils;
++import android.util.Base64;
++
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.IOException;
++import java.nio.ByteBuffer;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++import java.util.concurrent.TimeUnit;
++
++import okhttp3.MediaType;
++import okhttp3.OkHttpClient;
++import okhttp3.Request;
++import okhttp3.RequestBody;
++import okhttp3.Response;
++
++// Voice/round message transcription with Whisper on Cloudflare Workers AI (same approach as Nekogram's WhisperHelper)
++public class ProTranscriber {
++
++    private static final ExecutorService executor = Executors.newCachedThreadPool();
++    private static OkHttpClient client;
++
++    public interface Callback {
++        void run(String text, String error);
++    }
++
++    public static boolean useWorkersAi(int account) {
++        return SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI ||
++            SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_AUTO && !UserConfig.getInstance(account).isPremium();
++    }
++
++    public static boolean hasCredentials() {
++        return !TextUtils.isEmpty(SharedConfig.cfAccountId) && !TextUtils.isEmpty(SharedConfig.cfApiToken);
++    }
++
++    // callback runs on a background thread
++    public static void transcribe(File file, boolean video, Callback callback) {
++        if (!hasCredentials()) {
++            callback.run(null, LocaleController.getString(R.string.ProCloudflareNotSet));
++            return;
++        }
++        executor.submit(() -> {
++            File audio = file;
++            File extracted = null;
++            if (video) {
++                extracted = new File(file.getAbsolutePath() + ".m4a");
++                try {
++                    extractAudio(file.getAbsolutePath(), extracted.getAbsolutePath());
++                    audio = extracted;
++                } catch (Exception e) {
++                    FileLog.e(e);
++                }
++            }
++            try {
++                final JSONObject payload = new JSONObject();
++                payload.put("audio", Base64.encodeToString(readAll(audio), Base64.NO_WRAP));
++                payload.put("vad_filter", true);
++                final Request request = new Request.Builder()
++                    .url("https://api.cloudflare.com/client/v4/accounts/" + SharedConfig.cfAccountId + "/ai/run/@cf/openai/whisper-large-v3-turbo")
++                    .header("Authorization", "Bearer " + SharedConfig.cfApiToken)
++                    .post(RequestBody.create(payload.toString(), MediaType.get("application/json")))
++                    .build();
++                try (Response response = getClient().newCall(request).execute()) {
++                    final JSONObject json = new JSONObject(response.body().string());
++                    if (json.optBoolean("success") && json.optJSONObject("result") != null) {
++                        callback.run(json.getJSONObject("result").optString("text", "").trim(), null);
++                    } else {
++                        final JSONArray errors = json.optJSONArray("errors");
++                        final String message = errors != null && errors.length() > 0 ? errors.getJSONObject(0).optString("message") : ("HTTP " + response.code());
++                        callback.run(null, message);
++                    }
++                }
++            } catch (Exception e) {
++                FileLog.e(e);
++                callback.run(null, e.getLocalizedMessage() != null ? e.getLocalizedMessage() : e.toString());
++            } finally {
++                if (extracted != null) {
++                    extracted.delete();
++                }
++            }
++        });
++    }
++
++    private static OkHttpClient getClient() {
++        if (client == null) {
++            client = new OkHttpClient.Builder()
++                .connectTimeout(120, TimeUnit.SECONDS)
++                .readTimeout(120, TimeUnit.SECONDS)
++                .writeTimeout(120, TimeUnit.SECONDS)
++                .build();
++        }
++        return client;
++    }
++
++    private static byte[] readAll(File file) throws IOException {
++        final byte[] data = new byte[(int) file.length()];
++        try (FileInputStream in = new FileInputStream(file)) {
++            int offset = 0;
++            while (offset < data.length) {
++                final int read = in.read(data, offset, data.length - offset);
++                if (read < 0) {
++                    break;
++                }
++                offset += read;
++            }
++        }
++        return data;
++    }
++
++    // round videos: copy the audio track into an .m4a so Whisper gets audio only
++    private static void extractAudio(String input, String output) throws IOException {
++        final MediaExtractor extractor = new MediaExtractor();
++        extractor.setDataSource(input);
++        int track = -1;
++        MediaFormat format = null;
++        for (int i = 0; i < extractor.getTrackCount(); i++) {
++            final MediaFormat f = extractor.getTrackFormat(i);
++            final String mime = f.getString(MediaFormat.KEY_MIME);
++            if (mime != null && mime.startsWith("audio/")) {
++                track = i;
++                format = f;
++                break;
++            }
++        }
++        if (format == null) {
++            extractor.release();
++            throw new IOException("No audio track in " + input);
++        }
++        final MediaMuxer muxer = new MediaMuxer(output, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
++        final int outTrack = muxer.addTrack(format);
++        muxer.start();
++        extractor.selectTrack(track);
++        final MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
++        final ByteBuffer buffer = ByteBuffer.allocate(65536);
++        while (true) {
++            final int size = extractor.readSampleData(buffer, 0);
++            if (size < 0) {
++                break;
++            }
++            info.offset = 0;
++            info.size = size;
++            info.presentationTimeUs = extractor.getSampleTime();
++            info.flags = 0;
++            muxer.writeSampleData(outTrack, buffer, info);
++            extractor.advance();
++        }
++        muxer.stop();
++        muxer.release();
++        extractor.release();
++    }
++}
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java b/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
+index f7f3896..7bac8c6 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
+@@ -276,6 +276,12 @@ public class SharedConfig {
+     public static int translateStyle;
+     public static boolean translateShowOriginal;
+     public static boolean autoTranslate;
++    public static final int TRANSCRIBE_PROVIDER_AUTO = 0;
++    public static final int TRANSCRIBE_PROVIDER_PREMIUM = 1;
++    public static final int TRANSCRIBE_PROVIDER_WORKERS_AI = 2;
++    public static int transcribeProvider;
++    public static String cfAccountId;
++    public static String cfApiToken;
+     public static boolean updateStickersOrderOnSend = true;
+     public static boolean bigCameraForRound;
+     public static Boolean useCamera2Force;
+@@ -651,6 +657,9 @@ public class SharedConfig {
+             translateStyle = preferences.getInt("translateStyle", TRANSLATE_STYLE_POPUP);
+             translateShowOriginal = preferences.getBoolean("translateShowOriginal", false);
+             autoTranslate = preferences.getBoolean("autoTranslate", false);
++            transcribeProvider = preferences.getInt("transcribeProvider", TRANSCRIBE_PROVIDER_AUTO);
++            cfAccountId = preferences.getString("cfAccountId", "");
++            cfApiToken = preferences.getString("cfApiToken", "");
+             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
+             streamMkv = preferences.getBoolean("streamMkv", false);
+             suggestStickers = preferences.getInt("suggestStickers", 0);
+@@ -1382,6 +1391,17 @@ public class SharedConfig {
+         MessagesController.getGlobalMainSettings().edit().putBoolean("autoTranslate", autoTranslate).apply();
+     }
+ 
++    public static void setTranscribeProvider(int provider) {
++        transcribeProvider = provider;
++        MessagesController.getGlobalMainSettings().edit().putInt("transcribeProvider", transcribeProvider).apply();
++    }
++
++    public static void setCloudflareCredentials(String accountId, String apiToken) {
++        cfAccountId = accountId;
++        cfApiToken = apiToken;
++        MessagesController.getGlobalMainSettings().edit().putString("cfAccountId", cfAccountId).putString("cfApiToken", cfApiToken).apply();
++    }
++
+     public static void toggleSortContactsByName() {
+         sortContactsByName = !sortContactsByName;
+         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+index 6b45401..c2b5e42 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+@@ -127,6 +127,7 @@ import org.telegram.messenger.MediaDataController;
+ import org.telegram.messenger.MessageObject;
+ import org.telegram.messenger.MessagesController;
+ import org.telegram.messenger.NotificationCenter;
++import org.telegram.messenger.ProTranscriber;
+ import org.telegram.messenger.R;
+ import org.telegram.messenger.RichMessageLayout;
+ import org.telegram.messenger.SendMessagesHelper;
+@@ -12665,6 +12666,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+             (
+                 UserConfig.getInstance(currentAccount).isPremium()
+                 ||
++                ProTranscriber.useWorkersAi(currentAccount)
++                ||
+                 TranscribeButton.isFreeTranscribeInChat(currentMessageObject)
+                 ||
+                 MessagesController.getInstance(currentAccount).transcribeAudioTrialWeeklyNumber > 0 &&
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java b/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
+index 0849d5d..815e11f 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
+@@ -34,8 +34,11 @@ import org.telegram.messenger.DialogObject;
+ import org.telegram.messenger.FileLog;
+ import org.telegram.messenger.MessageObject;
+ import org.telegram.messenger.MessagesController;
++import org.telegram.messenger.FileLoader;
++import org.telegram.messenger.LocaleController;
+ import org.telegram.messenger.MessagesStorage;
+ import org.telegram.messenger.NotificationCenter;
++import org.telegram.messenger.ProTranscriber;
+ import org.telegram.messenger.R;
+ import org.telegram.messenger.UserConfig;
+ import org.telegram.messenger.Utilities;
+@@ -45,6 +48,7 @@ import org.telegram.ui.ActionBar.Theme;
+ import org.telegram.ui.Cells.ChatMessageCell;
+ 
+ import java.util.ArrayList;
++import java.io.File;
+ import java.util.HashMap;
+ import java.util.Objects;
+ 
+@@ -112,7 +116,7 @@ public class TranscribeButton {
+ 
+         this.isOpen = false;
+         this.shouldBeOpen = false;
+-        premium = parent.getMessageObject() != null && UserConfig.getInstance(parent.getMessageObject().currentAccount).isPremium();
++        premium = parent.getMessageObject() != null && (UserConfig.getInstance(parent.getMessageObject().currentAccount).isPremium() || ProTranscriber.useWorkersAi(parent.getMessageObject().currentAccount));
+ 
+         loadingFloat = new AnimatedFloat(parent, 250, CubicBezierInterpolator.EASE_OUT_QUINT);
+         animatedDrawLock = new AnimatedFloat(parent, 250, CubicBezierInterpolator.EASE_OUT_QUINT);
+@@ -687,6 +691,45 @@ public class TranscribeButton {
+                 if (BuildVars.LOGS_ENABLED) {
+                     FileLog.d("sending Transcription request, msg_id=" + messageId + " dialog_id=" + dialogId);
+                 }
++                if (ProTranscriber.useWorkersAi(account)) {
++                    final File file = FileLoader.getInstance(account).getPathToMessage(messageObject.messageOwner);
++                    if (file == null || !file.exists()) {
++                        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject);
++                        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateTranscriptionLock);
++                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.ProTranscribeDownloadFirst));
++                        return;
++                    }
++                    final long id = Utilities.random.nextLong();
++                    if (transcribeOperationsByDialogPosition == null) {
++                        transcribeOperationsByDialogPosition = new HashMap<>();
++                    }
++                    transcribeOperationsByDialogPosition.put((Integer) reqInfoHash(messageObject), messageObject);
++                    ProTranscriber.transcribe(file, messageObject.isRoundVideo(), (text, error) -> {
++                        if (text != null) {
++                            if (transcribeOperationsById == null) {
++                                transcribeOperationsById = new HashMap<>();
++                            }
++                            transcribeOperationsById.put(id, messageObject);
++                            messageObject.messageOwner.voiceTranscriptionId = id;
++                            final long duration = SystemClock.elapsedRealtime() - start;
++                            TranscribeButton.openVideoTranscription(messageObject);
++                            messageObject.messageOwner.voiceTranscriptionOpen = true;
++                            messageObject.messageOwner.voiceTranscriptionFinal = true;
++                            MessagesStorage.getInstance(account).updateMessageVoiceTranscription(dialogId, messageId, text, messageObject.messageOwner);
++                            AndroidUtilities.runOnUIThread(() -> finishTranscription(messageObject, id, text), Math.max(0, minDuration - duration));
++                        } else {
++                            AndroidUtilities.runOnUIThread(() -> {
++                                if (transcribeOperationsByDialogPosition != null) {
++                                    transcribeOperationsByDialogPosition.remove((Integer) reqInfoHash(messageObject));
++                                }
++                                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject);
++                                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateTranscriptionLock);
++                                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, error);
++                            });
++                        }
++                    });
++                    return;
++                }
+                 TLRPC.TL_messages_transcribeAudio req = new TLRPC.TL_messages_transcribeAudio();
+                 req.peer = peer;
+                 req.msg_id = messageId;
+@@ -857,6 +900,9 @@ public class TranscribeButton {
+         if (messageObject == null || messageObject.messageOwner == null) {
+             return false;
+         }
++        if (ProTranscriber.useWorkersAi(messageObject.currentAccount)) {
++            return false;
++        }
+         if (isFreeTranscribeInChat(messageObject)) {
+             return false;
+         }
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
+index 372e9c1..6e10657 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
+@@ -2,13 +2,19 @@ package org.telegram.ui;
+ 
+ import static org.telegram.messenger.LocaleController.getString;
+ 
++import android.util.TypedValue;
+ import android.view.View;
++import android.widget.EditText;
++import android.widget.LinearLayout;
+ 
++import org.telegram.messenger.ProTranscriber;
+ import org.telegram.messenger.ProTranslators;
+ import org.telegram.messenger.R;
+ import org.telegram.messenger.SharedConfig;
+ import org.telegram.messenger.TranslateController;
+ import org.telegram.ui.ActionBar.AlertDialog;
++import org.telegram.ui.ActionBar.Theme;
++import org.telegram.ui.Components.LayoutHelper;
+ import org.telegram.ui.Components.TranslateAlert2;
+ import org.telegram.ui.Components.UItem;
+ import org.telegram.ui.Components.UniversalAdapter;
+@@ -28,6 +34,8 @@ public class ProSettingsActivity extends UniversalFragment {
+     private static final int TRANSLATE_TO = 7;
+     private static final int DO_NOT_TRANSLATE = 8;
+     private static final int AUTO_TRANSLATE = 9;
++    private static final int TRANSCRIBE_PROVIDER = 10;
++    private static final int CLOUDFLARE_CREDENTIALS = 11;
+ 
+     @Override
+     public void onResume() {
+@@ -58,6 +66,11 @@ public class ProSettingsActivity extends UniversalFragment {
+         items.add(UItem.asButton(DO_NOT_TRANSLATE, getString(R.string.ProDoNotTranslate), getRestrictedLanguagesValue()));
+         items.add(UItem.asCheck(AUTO_TRANSLATE, getString(R.string.ProAutoTranslate)).setChecked(SharedConfig.autoTranslate));
+         items.add(UItem.asShadow(getString(R.string.ProTranslateInfo)));
++
++        items.add(UItem.asHeader(getString(R.string.ProTranscribeHeader)));
++        items.add(UItem.asButton(TRANSCRIBE_PROVIDER, getString(R.string.ProTranscribeProvider), getTranscribeProviderName(SharedConfig.transcribeProvider)));
++        items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
++        items.add(UItem.asShadow(getString(R.string.ProTranscribeInfo)));
+     }
+ 
+     @Override
+@@ -94,6 +107,16 @@ public class ProSettingsActivity extends UniversalFragment {
+             case TRANSLATE_TO:
+                 showLanguageChoice();
+                 return;
++            case TRANSCRIBE_PROVIDER:
++                showChoice(getString(R.string.ProTranscribeProvider), new CharSequence[] {
++                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_AUTO),
++                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM),
++                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI)
++                }, SharedConfig::setTranscribeProvider);
++                return;
++            case CLOUDFLARE_CREDENTIALS:
++                showCloudflareCredentials();
++                return;
+             case DO_NOT_TRANSLATE:
+                 presentFragment(new RestrictedLanguagesSelectActivity());
+                 return;
+@@ -140,6 +163,50 @@ public class ProSettingsActivity extends UniversalFragment {
+         showDialog(builder.create());
+     }
+ 
++    private void showCloudflareCredentials() {
++        if (getParentActivity() == null) {
++            return;
++        }
++        final LinearLayout layout = new LinearLayout(getParentActivity());
++        layout.setOrientation(LinearLayout.VERTICAL);
++        final EditText accountId = createInput(getString(R.string.ProCloudflareAccountId), SharedConfig.cfAccountId);
++        final EditText apiToken = createInput(getString(R.string.ProCloudflareApiToken), SharedConfig.cfApiToken);
++        layout.addView(accountId, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 24, 8, 24, 0));
++        layout.addView(apiToken, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 24, 8, 24, 0));
++
++        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
++        builder.setTitle(getString(R.string.ProCloudflareCredentials));
++        builder.setView(layout);
++        builder.setPositiveButton(getString(R.string.OK), (dialog, which) -> {
++            SharedConfig.setCloudflareCredentials(accountId.getText().toString().trim(), apiToken.getText().toString().trim());
++            listView.adapter.update(true);
++        });
++        builder.setNegativeButton(getString(R.string.Cancel), null);
++        showDialog(builder.create());
++    }
++
++    private EditText createInput(String hint, String value) {
++        final EditText editText = new EditText(getParentActivity());
++        editText.setHint(hint);
++        editText.setText(value);
++        editText.setSingleLine(true);
++        editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
++        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
++        editText.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
++        return editText;
++    }
++
++    private static String getTranscribeProviderName(int provider) {
++        switch (provider) {
++            case SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM:
++                return getString(R.string.ProTranscribePremium);
++            case SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI:
++                return getString(R.string.ProTranscribeWorkersAi);
++            default:
++                return getString(R.string.ProTranscribeAuto);
++        }
++    }
++
+     private static String getStyleName(int style) {
+         return getString(style == SharedConfig.TRANSLATE_STYLE_INLINE ? R.string.ProTranslateStyleInline : R.string.ProTranslateStylePopup);
+     }
+diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
+index 615af70..6c86148 100644
+--- a/TMessagesProj/src/main/res/values/strings.xml
++++ b/TMessagesProj/src/main/res/values/strings.xml
+@@ -2724,6 +2724,19 @@
+     <string name="ProTranslateTo">Idioma de destino</string>
+     <string name="ProDoNotTranslate">Não traduzir</string>
+     <string name="ProAutoTranslate">Tradução automática</string>
++    <string name="ProTranscribeHeader">Transcrição de áudio</string>
++    <string name="ProTranscribeProvider">Provedor de transcrição</string>
++    <string name="ProTranscribeAuto">Automático</string>
++    <string name="ProTranscribePremium">Telegram Premium</string>
++    <string name="ProTranscribeWorkersAi">Cloudflare Workers AI</string>
++    <string name="ProCloudflareCredentials">Credenciais da Cloudflare</string>
++    <string name="ProCloudflareAccountId">Account ID</string>
++    <string name="ProCloudflareApiToken">API Token</string>
++    <string name="ProCloudflareSet">Configurado</string>
++    <string name="ProCloudflareNotSetShort">Não configurado</string>
++    <string name="ProCloudflareNotSet">Configure as credenciais da Cloudflare em Configurações → Telegram Pro.</string>
++    <string name="ProTranscribeDownloadFirst">Baixe o áudio antes de transcrever.</string>
++    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o Whisper na sua conta Cloudflare (cota grátis diária). Crie um API Token com permissão \"Workers AI\" em dash.cloudflare.com.</string>
+     <string name="ProSpeedHeader">Velocidade</string>
+     <string name="ProSpeedInfo">Usa partes maiores e mais conexões paralelas para baixar e enviar arquivos.</string>
+     <string name="ProTranslateHeader">Tradução</string>
