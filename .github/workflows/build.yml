@@ -39,13 +39,10 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Notify start
-        run: |
-          VERSION=$(grep -m1 -o '^## v[0-9]*\.[0-9]*\.[0-9]*' CHANGELOG.md | cut -c4-)
-          .github/scripts/tg.sh send "🟡 <b>Build iniciado</b>
-          ${VERSION} · <code>${BRANCH}</code> · <code>$(git rev-parse --short HEAD)</code>
-          $(git log -1 --format=%s | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
-          <a href=\"${RUN_URL}\">Logs</a>"
+      - name: Live status in the CI group
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/progress.sh start
 
       - name: Free disk space
         run: |
@@ -75,7 +72,8 @@ jobs:
         run: |
           echo "$PRO_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/telegrampro.jks"
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          PRO_KEYSTORE_FILE="$RUNNER_TEMP/telegrampro.jks" ./gradlew :TMessagesProj_App:assembleAfatRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx6g
+          set -o pipefail
+          PRO_KEYSTORE_FILE="$RUNNER_TEMP/telegrampro.jks" ./gradlew :TMessagesProj_App:assembleAfatRelease --no-daemon --console=plain -Dorg.gradle.jvmargs=-Xmx6g 2>&1 | tee "$RUNNER_TEMP/gradle.log"
           rm -f "$RUNNER_TEMP/telegrampro.jks"
 
       - name: Collect APK and release notes
@@ -177,15 +175,12 @@ jobs:
           NEW: ${{ steps.meta.outputs.new }}
         run: |
           if [ "$JOB_STATUS" != "success" ]; then
-            .github/scripts/tg.sh send "❌ <b>Build falhou</b> · <code>${BRANCH}</code>
-          <a href=\"${RUN_URL}\">Ver logs</a>"
+            .github/scripts/progress.sh final "$JOB_STATUS"
           elif [ "$NEW" = "true" ]; then
-            .github/scripts/tg.sh send "✅ <b>${VERSION} publicada</b>
-          <a href=\"${{ github.server_url }}/${{ github.repository }}/releases/tag/${VERSION}\">Release</a> · enviada ao canal · <a href=\"${RUN_URL}\">Logs</a>"
+            .github/scripts/progress.sh final success "🚀 <b>${VERSION} publicada</b>: <a href=\"${{ github.server_url }}/${{ github.repository }}/releases/tag/${VERSION}\">Release</a> · enviada ao canal"
           elif [ "$BRANCH" != "main" ]; then
-            .github/scripts/tg.sh file "$APK" "✅ <b>Build de teste</b> · <code>${BRANCH}</code> · ${VERSION}
-          Não publicado. <a href=\"${RUN_URL}\">Logs</a>"
+            .github/scripts/progress.sh final success "🧪 Build de teste, não publicado. APK abaixo."
+            .github/scripts/tg.sh file "$APK" "🧪 <b>${VERSION}</b> · <code>${BRANCH}</code> · $(git rev-parse --short HEAD)"
           else
-            .github/scripts/tg.sh send "✅ <b>Build concluído</b> · <code>main</code> · ${VERSION}
-          Versão já publicada, nada a enviar. <a href=\"${RUN_URL}\">Logs</a>"
+            .github/scripts/progress.sh final success "Versão já publicada, nada a enviar."
           fi
