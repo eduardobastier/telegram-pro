@@ -1,6 +1,7 @@
 name: CI bot
 
-# Polls the Telegram bot for commands sent by the admin in the private CI group.
+# Polls the Telegram bot for commands sent by the admin in the private CI group:
+# /buildmain, /builddev, /release, /update, /status, /help.
 # GitHub cannot receive Telegram webhooks, so this runs every 5 minutes (GitHub may delay schedules).
 on:
   schedule:
@@ -64,12 +65,8 @@ jobs:
             cmd=$(echo "$line" | awk '{print $1}' | cut -d@ -f1)
             arg=$(echo "$line" | awk '{print $2}')
             case "$cmd" in
-              /build)
-                branch="${arg:-main}"
-                if ! git ls-remote --exit-code origin "refs/heads/$branch" > /dev/null; then
-                  .github/scripts/tg.sh send "⚠️ Branch <code>${branch}</code> não existe."
-                  continue
-                fi
+              /buildmain|/builddev)
+                branch="${cmd#/build}"
                 gh workflow run build.yml --ref main -f branch="$branch"
                 .github/scripts/tg.sh send "▶️ Build da <code>${branch}</code> solicitado. <a href=\"${REPO_URL}/actions/workflows/build.yml\">Acompanhar</a>"
                 ;;
@@ -103,14 +100,21 @@ jobs:
           ${runs}"
                 ;;
               /help|/start)
-                .github/scripts/tg.sh send "<b>Comandos</b>
-          /build — compila a main (publica se a versão for nova)
-          /build dev — compila a dev e envia o APK só aqui
-          /release — leva a dev para a main e publica
-          /update — verifica nova versão do Telegram oficial
-          /status — últimos builds e release
+                .github/scripts/tg.sh send "🤖 <b>Telegram Pro CI — ajuda</b>
 
-          Os comandos são lidos a cada ~5 min."
+          /buildmain — compila a branch <code>main</code>. Se a versão do topo do CHANGELOG.md ainda não tiver release, cria a GitHub Release e posta o APK no canal; senão só compila.
+
+          /builddev — compila a branch <code>dev</code> e envia o APK só aqui no grupo, para teste. Não cria release nem posta no canal.
+
+          /release — leva a <code>dev</code> para a <code>main</code> e publica a versão do topo do CHANGELOG.md (Release + canal). Recusa se essa versão já foi publicada.
+
+          /update — verifica agora se saiu versão nova do Telegram oficial; se sim, faz merge, cria a próxima versão e publica.
+
+          /status — mostra os últimos builds e a última release.
+
+          /help — esta mensagem.
+
+          ⏱ Os comandos são lidos a cada ~5 min (o GitHub pode atrasar). Avisos de início, fim e falha dos builds chegam aqui automaticamente."
                 ;;
               *)
                 .github/scripts/tg.sh send "Comando desconhecido: <code>${cmd}</code>. Use /help."
