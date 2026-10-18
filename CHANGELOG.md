@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.0
+- Transcrição de áudios e vídeos redondos sem Premium
+- Provedores de transcrição: no aparelho (grátis, offline) e Cloudflare Workers AI (Whisper)
+- Opção de transcrever áudios automaticamente
+- Ícone padrão do Telegram restaurado
+
 ## v1.0.0
 - Download e upload mais rápidos (partes maiores e mais conexões em paralelo)
 - Tradução de chats inteiros sem Premium

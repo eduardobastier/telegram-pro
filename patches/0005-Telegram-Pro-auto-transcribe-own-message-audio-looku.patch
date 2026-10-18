@@ -1,0 +1,304 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Eduardo Bastier <eduardobastier93@gmail.com>
+Date: Sat, 17 Oct 2026 22:48:36 -0300
+Subject: [PATCH 5/5] Telegram Pro: auto-transcribe, own-message audio lookup,
+ paced on-device recognition
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../messenger/ProDeviceTranscriber.java       | 43 +++++++++++++++++--
+ .../telegram/messenger/ProTranscriber.java    | 19 ++++++++
+ .../org/telegram/messenger/SharedConfig.java  |  7 +++
+ .../telegram/ui/Cells/ChatMessageCell.java    |  6 +++
+ .../ui/Components/TranscribeButton.java       | 22 +++++++++-
+ .../org/telegram/ui/ProSettingsActivity.java  |  5 +++
+ TMessagesProj/src/main/res/values/strings.xml |  3 +-
+ 7 files changed, 98 insertions(+), 7 deletions(-)
+
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ProDeviceTranscriber.java b/TMessagesProj/src/main/java/org/telegram/messenger/ProDeviceTranscriber.java
+index c65225b..42976bf 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/ProDeviceTranscriber.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ProDeviceTranscriber.java
+@@ -29,10 +29,14 @@ import java.nio.ShortBuffer;
+ import java.util.ArrayList;
+ 
+ // Transcribes an audio file with Android's speech recognizer (Android 13+): the file is decoded
+-// to 16-bit mono PCM and fed to the recognizer as an audio source in a segmented session, so
+-// long voice messages are recognized piece by piece.
++// to 16-bit mono PCM and streamed to the recognizer through a pipe in a segmented session, so
++// long voice messages are recognized piece by piece. The PCM is paced (FEED_SPEED x real time)
++// because the recognizer drops audio that arrives while it is closing a segment after a pause.
+ public class ProDeviceTranscriber {
+ 
++    private static final float FEED_SPEED = 2f;
++    private static final int FEED_CHUNK_MS = 100;
++
+     public static void transcribe(File file, ProTranscriber.Callback callback) {
+         final Context context = ApplicationLoader.applicationContext;
+         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+@@ -72,6 +76,7 @@ public class ProDeviceTranscriber {
+         private final long timeoutMs;
+         private SpeechRecognizer recognizer;
+         private ParcelFileDescriptor source;
++        private Thread feeder;
+         private boolean onDevice;
+         private boolean finished;
+         private final Runnable timeout = this::finishWithText;
+@@ -82,13 +87,16 @@ public class ProDeviceTranscriber {
+             this.sampleRate = sampleRate;
+             this.callback = callback;
+             final long durationMs = pcm.length() * 1000L / (2L * sampleRate);
+-            this.timeoutMs = durationMs * 2 + 30_000;
++            this.timeoutMs = (long) (durationMs / FEED_SPEED) * 2 + 30_000;
+         }
+ 
+         void start(boolean preferOnDevice) {
+             onDevice = preferOnDevice && SpeechRecognizer.isOnDeviceRecognitionAvailable(context);
++            final ParcelFileDescriptor sink;
+             try {
+-                source = ParcelFileDescriptor.open(pcm, ParcelFileDescriptor.MODE_READ_ONLY);
++                final ParcelFileDescriptor[] pipe = ParcelFileDescriptor.createPipe();
++                source = pipe[0];
++                sink = pipe[1];
+             } catch (IOException e) {
+                 FileLog.e(e);
+                 finishWithError(LocaleController.getString(R.string.ProTranscribeDecodeFailed));
+@@ -106,13 +114,40 @@ public class ProDeviceTranscriber {
+             intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT);
+             intent.putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, sampleRate);
+             intent.putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_AUDIO_SOURCE);
++            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10_000);
++            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 10_000);
+             AndroidUtilities.cancelRunOnUIThread(timeout);
+             AndroidUtilities.runOnUIThread(timeout, timeoutMs);
+             recognizer.startListening(intent);
++            feeder = new Thread(() -> feed(sink), "ProTranscribeFeeder");
++            feeder.start();
++        }
++
++        // writes the PCM file into the pipe at FEED_SPEED x real time; closing the pipe ends the session
++        private void feed(ParcelFileDescriptor sink) {
++            final int chunkBytes = sampleRate * 2 * FEED_CHUNK_MS / 1000;
++            final long chunkDelayMs = (long) (FEED_CHUNK_MS / FEED_SPEED);
++            try (java.io.FileInputStream in = new java.io.FileInputStream(pcm);
++                 OutputStream out = new ParcelFileDescriptor.AutoCloseOutputStream(sink)) {
++                final byte[] buffer = new byte[chunkBytes];
++                int read;
++                while ((read = in.read(buffer)) > 0) {
++                    out.write(buffer, 0, read);
++                    out.flush();
++                    Thread.sleep(chunkDelayMs);
++                }
++            } catch (InterruptedException ignore) {
++            } catch (IOException e) {
++                // the recognizer closed its end (finished or failed)
++            }
+         }
+ 
+         private void release() {
+             AndroidUtilities.cancelRunOnUIThread(timeout);
++            if (feeder != null) {
++                feeder.interrupt();
++                feeder = null;
++            }
+             if (recognizer != null) {
+                 recognizer.destroy();
+                 recognizer = null;
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java b/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
+index 634e9da..c4ef786 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/ProTranscriber.java
+@@ -8,6 +8,7 @@ import android.text.TextUtils;
+ import android.util.Base64;
+ 
+ import org.json.JSONArray;
++import org.telegram.tgnet.TLRPC;
+ import org.json.JSONObject;
+ 
+ import java.io.File;
+@@ -42,6 +43,24 @@ public class ProTranscriber {
+             SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_AUTO && !UserConfig.getInstance(account).isPremium();
+     }
+ 
++    // own messages keep the recorded file in attachPath; received ones live in the download cache
++    public static File findMediaFile(MessageObject messageObject) {
++        final TLRPC.Message message = messageObject.messageOwner;
++        if (!TextUtils.isEmpty(message.attachPath)) {
++            final File file = new File(message.attachPath);
++            if (file.exists()) {
++                return file;
++            }
++        }
++        final FileLoader loader = FileLoader.getInstance(messageObject.currentAccount);
++        File file = loader.getPathToMessage(message);
++        if (file != null && file.exists()) {
++            return file;
++        }
++        file = loader.getPathToAttach(messageObject.getDocument(), true);
++        return file != null && file.exists() ? file : null;
++    }
++
+     public static boolean hasCredentials() {
+         return !TextUtils.isEmpty(SharedConfig.cfAccountId) && !TextUtils.isEmpty(SharedConfig.cfApiToken);
+     }
+diff --git a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java b/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
+index ebda9cb..c81a922 100644
+--- a/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
++++ b/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
+@@ -281,6 +281,7 @@ public class SharedConfig {
+     public static final int TRANSCRIBE_PROVIDER_WORKERS_AI = 2;
+     public static final int TRANSCRIBE_PROVIDER_DEVICE = 3;
+     public static int transcribeProvider;
++    public static boolean autoTranscribe;
+     public static String cfAccountId;
+     public static String cfApiToken;
+     public static boolean updateStickersOrderOnSend = true;
+@@ -659,6 +660,7 @@ public class SharedConfig {
+             translateShowOriginal = preferences.getBoolean("translateShowOriginal", false);
+             autoTranslate = preferences.getBoolean("autoTranslate", false);
+             transcribeProvider = preferences.getInt("transcribeProvider", TRANSCRIBE_PROVIDER_AUTO);
++            autoTranscribe = preferences.getBoolean("autoTranscribe", false);
+             cfAccountId = preferences.getString("cfAccountId", "");
+             cfApiToken = preferences.getString("cfApiToken", "");
+             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
+@@ -1397,6 +1399,11 @@ public class SharedConfig {
+         MessagesController.getGlobalMainSettings().edit().putInt("transcribeProvider", transcribeProvider).apply();
+     }
+ 
++    public static void toggleAutoTranscribe() {
++        autoTranscribe = !autoTranscribe;
++        MessagesController.getGlobalMainSettings().edit().putBoolean("autoTranscribe", autoTranscribe).apply();
++    }
++
+     public static void setCloudflareCredentials(String accountId, String apiToken) {
+         cfAccountId = accountId;
+         cfApiToken = apiToken;
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+index ce896c7..349c5d7 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java
+@@ -12691,6 +12691,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+             ) && currentMessageObject.messageOwner != null && !(MessageObject.getMedia(currentMessageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage) &&
+             (currentMessageObject.messageOwner.media == null || currentMessageObject.messageOwner.media.ttl_seconds == 0)
+         );
++        if (useTranscribeButton) {
++            TranscribeButton.autoTranscribe(currentMessageObject);
++        }
+         updateSeekBarWaveformWidth(null);
+     }
+ 
+@@ -18078,6 +18081,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
+         } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO || documentAttachType == DOCUMENT_ATTACH_TYPE_MUSIC) {
+             updateButtonState(false, true, false);
+             updateWaveform();
++            if (useTranscribeButton) {
++                TranscribeButton.autoTranscribe(currentMessageObject);
++            }
+         } else {
+             currentMessageObject.updateQualitiesCached(true);
+             if (drawVideoImageButton) {
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java b/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
+index ff2bbd2..9736613 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/Components/TranscribeButton.java
+@@ -40,6 +40,7 @@ import org.telegram.messenger.MessagesStorage;
+ import org.telegram.messenger.NotificationCenter;
+ import org.telegram.messenger.ProTranscriber;
+ import org.telegram.messenger.R;
++import org.telegram.messenger.SharedConfig;
+ import org.telegram.messenger.UserConfig;
+ import org.telegram.messenger.Utilities;
+ import org.telegram.tgnet.ConnectionsManager;
+@@ -50,6 +51,7 @@ import org.telegram.ui.Cells.ChatMessageCell;
+ import java.util.ArrayList;
+ import java.io.File;
+ import java.util.HashMap;
++import java.util.HashSet;
+ import java.util.Objects;
+ 
+ public class TranscribeButton {
+@@ -663,6 +665,22 @@ public class TranscribeButton {
+         }
+     }
+ 
++    private static final HashSet<Integer> autoTranscribeTried = new HashSet<>();
++
++    // Telegram Pro: transcribe voice/round messages as soon as they are shown and their file is available
++    public static void autoTranscribe(MessageObject messageObject) {
++        if (!SharedConfig.autoTranscribe || messageObject == null || messageObject.messageOwner == null || !messageObject.isSent()) {
++            return;
++        }
++        if (!ProTranscriber.isEnabled(messageObject.currentAccount) || messageObject.messageOwner.voiceTranscription != null || isTranscribing(messageObject)) {
++            return;
++        }
++        if (ProTranscriber.findMediaFile(messageObject) == null || !autoTranscribeTried.add(reqInfoHash(messageObject))) {
++            return;
++        }
++        transcribePressed(messageObject, true, null);
++    }
++
+     public static boolean isTranscribing(MessageObject messageObject) {
+         return (
+             (transcribeOperationsByDialogPosition != null && (transcribeOperationsByDialogPosition.containsValue(messageObject) || transcribeOperationsByDialogPosition.containsKey((Integer) reqInfoHash(messageObject)))) ||
+@@ -692,8 +710,8 @@ public class TranscribeButton {
+                     FileLog.d("sending Transcription request, msg_id=" + messageId + " dialog_id=" + dialogId);
+                 }
+                 if (ProTranscriber.isEnabled(account)) {
+-                    final File file = FileLoader.getInstance(account).getPathToMessage(messageObject.messageOwner);
+-                    if (file == null || !file.exists()) {
++                    final File file = ProTranscriber.findMediaFile(messageObject);
++                    if (file == null) {
+                         NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject);
+                         NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateTranscriptionLock);
+                         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.ProTranscribeDownloadFirst));
+diff --git a/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java b/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
+index dbbb494..0426108 100644
+--- a/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
++++ b/TMessagesProj/src/main/java/org/telegram/ui/ProSettingsActivity.java
+@@ -36,6 +36,7 @@ public class ProSettingsActivity extends UniversalFragment {
+     private static final int AUTO_TRANSLATE = 9;
+     private static final int TRANSCRIBE_PROVIDER = 10;
+     private static final int CLOUDFLARE_CREDENTIALS = 11;
++    private static final int AUTO_TRANSCRIBE = 12;
+ 
+     private static final int[] TRANSCRIBE_PROVIDERS = {
+         SharedConfig.TRANSCRIBE_PROVIDER_AUTO,
+@@ -76,6 +77,7 @@ public class ProSettingsActivity extends UniversalFragment {
+ 
+         items.add(UItem.asHeader(getString(R.string.ProTranscribeHeader)));
+         items.add(UItem.asButton(TRANSCRIBE_PROVIDER, getString(R.string.ProTranscribeProvider), getTranscribeProviderName(SharedConfig.transcribeProvider)));
++        items.add(UItem.asCheck(AUTO_TRANSCRIBE, getString(R.string.ProAutoTranscribe)).setChecked(SharedConfig.autoTranscribe));
+         if (SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI) {
+             items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
+         }
+@@ -100,6 +102,9 @@ public class ProSettingsActivity extends UniversalFragment {
+             case AUTO_TRANSLATE:
+                 SharedConfig.toggleAutoTranslate();
+                 break;
++            case AUTO_TRANSCRIBE:
++                SharedConfig.toggleAutoTranscribe();
++                break;
+             case TRANSLATE_STYLE:
+                 showChoice(getString(R.string.ProTranslateStyle), new CharSequence[] {
+                     getStyleName(SharedConfig.TRANSLATE_STYLE_POPUP),
+diff --git a/TMessagesProj/src/main/res/values/strings.xml b/TMessagesProj/src/main/res/values/strings.xml
+index 3df7a8b..085d1fc 100644
+--- a/TMessagesProj/src/main/res/values/strings.xml
++++ b/TMessagesProj/src/main/res/values/strings.xml
+@@ -2726,6 +2726,7 @@
+     <string name="ProAutoTranslate">Tradução automática</string>
+     <string name="ProTranscribeHeader">Transcrição de áudio</string>
+     <string name="ProTranscribeProvider">Provedor de transcrição</string>
++    <string name="ProAutoTranscribe">Transcrever automaticamente</string>
+     <string name="ProTranscribeAuto">Automático</string>
+     <string name="ProTranscribePremium">Telegram Premium</string>
+     <string name="ProTranscribeWorkersAi">Cloudflare Workers AI</string>
+@@ -2744,7 +2745,7 @@
+     <string name="ProCloudflareNotSetShort">Não configurado</string>
+     <string name="ProCloudflareNotSet">Configure as credenciais da Cloudflare em Configurações → Telegram Pro.</string>
+     <string name="ProTranscribeDownloadFirst">Baixe o áudio antes de transcrever.</string>
+-    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o reconhecimento de voz do próprio aparelho (grátis, o áudio não sai do celular). Cloudflare Workers AI usa o Whisper na sua conta Cloudflare e precisa de Account ID e API Token.</string>
++    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o reconhecimento de voz do próprio aparelho (grátis, o áudio não sai do celular). Cloudflare Workers AI usa o Whisper na sua conta Cloudflare e precisa de Account ID e API Token. Transcrever automaticamente transcreve áudios e vídeos redondos assim que aparecem no chat e já estão baixados.</string>
+     <string name="ProSpeedHeader">Velocidade</string>
+     <string name="ProSpeedInfo">Usa partes maiores e mais conexões paralelas para baixar e enviar arquivos.</string>
+     <string name="ProTranslateHeader">Tradução</string>
