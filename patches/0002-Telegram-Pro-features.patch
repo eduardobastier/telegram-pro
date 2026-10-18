@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Eduardo Bastier <eduardobastier93@gmail.com>
 Date: Sat, 17 Oct 2026 19:43:09 -0300
-Subject: [PATCH 2/2] Telegram Pro: features
+Subject: [PATCH 2/3] Telegram Pro: features
 
 - Faster downloads/uploads (bigger parts, more parallel requests)
 - Whole-chat translation without Premium, Nekogram providers,
