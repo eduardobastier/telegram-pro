@@ -1,46 +1,72 @@
-## Telegram messenger for Android
+# Telegram Pro
 
-[Telegram](https://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
-This repo contains the official source code for [Telegram App for Android](https://play.google.com/store/apps/details?id=org.telegram.messenger).
+Telegram para Android (arm64) baseado no [Telegram oficial](https://github.com/DrKLO/Telegram), com recursos inspirados no [Nekogram](https://github.com/Nekogram/Nekogram):
 
-## Creating your Telegram Application
+- Download e upload mais rápidos
+- Tradução de chats inteiros sem Premium, com vários provedores (Google, Microsoft, Yandex, Lingocloud, Baidu, Sogou, Telegram)
+- Estilo de tradução, texto original, idioma de destino, "não traduzir" e tradução automática
+- Transcrição de áudios sem Premium (no aparelho ou Cloudflare Workers AI) e transcrição automática
+- Configurações → Telegram Pro
 
-We welcome all developers to use our API and source code to create applications on our platform.
-There are several things we require from **all developers** for the moment.
+Downloads: [Releases](https://github.com/eduardobastier/telegram-pro/releases) e o canal [@Channel_TelegramPro](https://t.me/Channel_TelegramPro).
 
-1. [**Obtain your own api_id**](https://core.telegram.org/api/obtaining_api_id) for your application.
-2. Please **do not** use the name Telegram for your app — or make sure your users understand that it is unofficial.
-3. Kindly **do not** use our standard logo (white paper plane in a blue circle) as your app's logo.
-3. Please study our [**security guidelines**](https://core.telegram.org/mtproto/security_guidelines) and take good care of your users' data and privacy.
-4. Please remember to publish **your** code too in order to comply with the licences.
+## Branches
 
-### API, Protocol documentation
+| Branch | Uso |
+|---|---|
+| `dev` | Desenvolvimento. Todo trabalho novo entra aqui. |
+| `main` | Deploy. Cada commit gera um build; versão nova no `CHANGELOG.md` gera uma Release e um post no canal. |
 
-Telegram API manuals: https://core.telegram.org/api
+O histórico é um fork do Telegram oficial: as mudanças do Telegram Pro são commits por cima do código do Telegram.
 
-MTproto protocol manuals: https://core.telegram.org/mtproto
+## Publicar uma versão
 
-### Compilation Guide
+1. Trabalhe na `dev` e teste no aparelho.
+2. Adicione a seção `## vX.Y.Z` no topo do `CHANGELOG.md`.
+3. Leve para a `main` (`git checkout main && git merge dev && git push`).
 
-**Note**: In order to support [reproducible builds](https://core.telegram.org/reproducible-builds), this repo contains dummy release.keystore,  google-services.json and filled variables inside BuildVars.java. Before publishing your own APKs please make sure to replace all these files with your own.
+O workflow **Build** compila o APK assinado, cria a Release `vX.Y.Z` com o APK e envia para o canal. Commits na `main` sem versão nova só geram o build (artefato no Actions).
 
-You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android SDK 36.
+## Atualizar a base (Telegram oficial)
 
-1. Clone the Telegram source code with its submodules:
-   ```bash
-   git clone --recursive --shallow-submodules https://github.com/DrKLO/Telegram.git Telegram
-   ```
-   In case you forgot the `--recursive` flag, change to the `Telegram` directory and run:
-   ```bash
-   git submodule init && git submodule update --init --recursive --depth=1
-   ```
-2. Copy your release.keystore into TMessagesProj/config
-3. Fill out RELEASE_KEY_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD in gradle.properties to access your  release.keystore
-4.  Go to https://console.firebase.google.com/, create two android apps with application IDs org.telegram.messenger and org.telegram.messenger.beta, turn on firebase messaging and download google-services.json, which should be copied to the same folder as TMessagesProj.
-5. Open the project in the Studio (note that it should be opened, NOT imported).
-6. Fill out values in TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java – there’s a link for each of the variables showing where and which data to obtain.
-7. You are ready to compile Telegram.
+Automático: o workflow **Update upstream** roda todo dia. Quando sai uma versão nova do Telegram oficial, ele faz merge na `main`, cria a versão `vX.Y.Z+1` no changelog, roda o build (Release + canal) e atualiza a `dev`. Se houver conflito, nada é publicado e uma issue é aberta.
 
-### Localization
+Manual (com rebase):
 
-We moved all translations to https://translations.telegram.org/en/android/. Please use it.
+```bash
+git remote add upstream https://github.com/DrKLO/Telegram.git   # uma vez
+git fetch upstream
+git checkout dev && git rebase upstream/master
+```
+
+## Build local
+
+```bash
+git clone --recurse-submodules https://github.com/eduardobastier/telegram-pro.git
+cd telegram-pro && ./gradlew :TMessagesProj_App:assembleAfatRelease
+```
+
+Requer JDK 21, Android SDK 36, NDK 27.2.12479018 e CMake 3.22.1. Credenciais em `~/.gradle/gradle.properties` (nunca no repositório):
+
+```properties
+PRO_APP_ID=...
+PRO_APP_HASH=...
+PRO_KEYSTORE_FILE=/caminho/telegrampro.jks
+PRO_KEYSTORE_PASSWORD=...
+PRO_KEY_ALIAS=telegrampro
+PRO_KEY_PASSWORD=...
+```
+
+### Secrets do repositório (Settings → Secrets → Actions)
+
+| Secret | Valor |
+|---|---|
+| `PRO_APP_ID`, `PRO_APP_HASH` | Credenciais de my.telegram.org |
+| `PRO_KEYSTORE_BASE64` | `base64 -i telegrampro.jks` |
+| `PRO_KEYSTORE_PASSWORD`, `PRO_KEY_ALIAS`, `PRO_KEY_PASSWORD` | Dados da chave |
+| `TELEGRAM_BOT_TOKEN` | Token do bot (@BotFather), admin do canal |
+| `TELEGRAM_CHAT_ID` | ID do canal |
+
+## Licença
+
+GPL-2.0, como o Telegram oficial. A biblioteca de tradução `app.nekogram.translator` é GPL-3.0.

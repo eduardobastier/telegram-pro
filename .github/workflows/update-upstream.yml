@@ -1,0 +1,77 @@
+name: Update upstream
+
+# Daily: merges the official Telegram (DrKLO/Telegram master) into main, bumps the patch version
+# in CHANGELOG.md and starts the Build workflow (which creates the release and posts to the channel).
+# dev is then updated from main. On conflicts nothing is published and an issue is opened.
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge official Telegram
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch -q https://github.com/DrKLO/Telegram.git master
+          UPSTREAM=$(git rev-parse FETCH_HEAD)
+          if git merge-base --is-ancestor "$UPSTREAM" HEAD; then
+            echo "Already up to date with DrKLO/Telegram@${UPSTREAM:0:7}"
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git merge --no-edit -m "Merge DrKLO/Telegram@${UPSTREAM:0:7}" "$UPSTREAM"; then
+            git merge --abort
+            TITLE="Conflito ao atualizar para DrKLO/Telegram@${UPSTREAM:0:7}"
+            if ! gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number' | grep -q .; then
+              gh issue create --title "$TITLE" --body "A nova versão do Telegram oficial (https://github.com/DrKLO/Telegram/commit/${UPSTREAM}) conflita com as mudanças do Telegram Pro. Nada foi publicado. Resolva localmente com \`git fetch upstream && git merge upstream/master\` (ou rebase) na branch dev e depois leve para main."
+            fi
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE_VERSION=$(grep '^APP_VERSION_NAME=' gradle.properties | cut -d= -f2)
+          LAST=$(grep -m1 -o '^## v[0-9]*\.[0-9]*\.[0-9]*' CHANGELOG.md | cut -c4-)
+          IFS=. read -r MAJOR MINOR PATCH <<< "${LAST#v}"
+          VERSION="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          python3 - "$VERSION" "$BASE_VERSION" <<'PY'
+          import sys
+          version, base = sys.argv[1], sys.argv[2]
+          text = open('CHANGELOG.md').read()
+          entry = f"## {version}\n- Base atualizada para o Telegram {base}\n- Todos os recursos do Telegram Pro mantidos\n\n"
+          i = text.index('## ')
+          open('CHANGELOG.md', 'w').write(text[:i] + entry + text[i:])
+          PY
+          git commit -am "${VERSION}: base Telegram ${BASE_VERSION}"
+          git push origin HEAD:main
+          echo "updated=true" >> "$GITHUB_OUTPUT"
+
+      - name: Update dev from main
+        if: steps.merge.outputs.updated == 'true'
+        continue-on-error: true
+        run: |
+          git fetch -q origin dev
+          git checkout -q -B dev origin/dev
+          git merge --no-edit -m "Merge main into dev" main
+          git push origin dev
+
+      - name: Start build
+        if: steps.merge.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --ref main
