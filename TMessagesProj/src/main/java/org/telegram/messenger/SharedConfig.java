@@ -282,6 +282,9 @@ public class SharedConfig {
     public static final int TRANSCRIBE_PROVIDER_DEVICE = 3;
     public static int transcribeProvider;
     public static boolean autoTranscribe;
+    public static boolean proAutoUpdate;
+    public static long proLastUpdateCheck;
+    public static String proSkippedUpdate;
     public static String cfAccountId;
     public static String cfApiToken;
     public static boolean updateStickersOrderOnSend = true;
@@ -661,6 +664,9 @@ public class SharedConfig {
             autoTranslate = preferences.getBoolean("autoTranslate", false);
             transcribeProvider = preferences.getInt("transcribeProvider", TRANSCRIBE_PROVIDER_AUTO);
             autoTranscribe = preferences.getBoolean("autoTranscribe", false);
+            proAutoUpdate = preferences.getBoolean("proAutoUpdate", true);
+            proLastUpdateCheck = preferences.getLong("proLastUpdateCheck", 0);
+            proSkippedUpdate = preferences.getString("proSkippedUpdate", "");
             cfAccountId = preferences.getString("cfAccountId", "");
             cfApiToken = preferences.getString("cfApiToken", "");
             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
@@ -1397,6 +1403,21 @@ public class SharedConfig {
     public static void setTranscribeProvider(int provider) {
         transcribeProvider = provider;
         MessagesController.getGlobalMainSettings().edit().putInt("transcribeProvider", transcribeProvider).apply();
+    }
+
+    public static void toggleProAutoUpdate() {
+        proAutoUpdate = !proAutoUpdate;
+        MessagesController.getGlobalMainSettings().edit().putBoolean("proAutoUpdate", proAutoUpdate).apply();
+    }
+
+    public static void setProLastUpdateCheck(long time) {
+        proLastUpdateCheck = time;
+        MessagesController.getGlobalMainSettings().edit().putLong("proLastUpdateCheck", proLastUpdateCheck).apply();
+    }
+
+    public static void setProSkippedUpdate(String version) {
+        proSkippedUpdate = version;
+        MessagesController.getGlobalMainSettings().edit().putString("proSkippedUpdate", proSkippedUpdate).apply();
     }
 
     public static void toggleAutoTranscribe() {

@@ -9,6 +9,7 @@ import android.widget.LinearLayout;
 
 import org.telegram.messenger.ProTranscriber;
 import org.telegram.messenger.ProTranslators;
+import org.telegram.messenger.ProUpdater;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.TranslateController;
@@ -37,6 +38,8 @@ public class ProSettingsActivity extends UniversalFragment {
     private static final int TRANSCRIBE_PROVIDER = 10;
     private static final int CLOUDFLARE_CREDENTIALS = 11;
     private static final int AUTO_TRANSCRIBE = 12;
+    private static final int AUTO_UPDATE = 13;
+    private static final int CHECK_UPDATE = 14;
 
     private static final int[] TRANSCRIBE_PROVIDERS = {
         SharedConfig.TRANSCRIBE_PROVIDER_AUTO,
@@ -82,6 +85,11 @@ public class ProSettingsActivity extends UniversalFragment {
             items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
         }
         items.add(UItem.asShadow(getString(R.string.ProTranscribeInfo)));
+
+        items.add(UItem.asHeader(getString(R.string.ProUpdateHeader)));
+        items.add(UItem.asCheck(AUTO_UPDATE, getString(R.string.ProUpdateAuto)).setChecked(SharedConfig.proAutoUpdate));
+        items.add(UItem.asButton(CHECK_UPDATE, getString(R.string.ProUpdateCheckNow), ProUpdater.currentVersion()));
+        items.add(UItem.asShadow(getString(R.string.ProUpdateInfo)));
     }
 
     @Override
@@ -105,6 +113,12 @@ public class ProSettingsActivity extends UniversalFragment {
             case AUTO_TRANSCRIBE:
                 SharedConfig.toggleAutoTranscribe();
                 break;
+            case AUTO_UPDATE:
+                SharedConfig.toggleProAutoUpdate();
+                break;
+            case CHECK_UPDATE:
+                ProUpdater.check(getParentActivity(), true);
+                return;
             case TRANSLATE_STYLE:
                 showChoice(getString(R.string.ProTranslateStyle), new CharSequence[] {
                     getStyleName(SharedConfig.TRANSLATE_STYLE_POPUP),
