@@ -1,4 +1,5 @@
 name: Build
+run-name: Build ${{ inputs.branch || github.ref_name }}
 
 # Every commit on main is built. When the top version in CHANGELOG.md has no release yet,
 # a GitHub Release is created with the APK and the APK is posted to the Telegram channel.

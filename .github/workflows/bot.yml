@@ -91,13 +91,11 @@ jobs:
                 .github/scripts/tg.sh send "🔄 Verificando nova versão do Telegram oficial…"
                 ;;
               /status)
-                runs=$(gh run list --limit 6 --json workflowName,status,conclusion,headBranch,displayTitle,url \
-                  --jq '.[] | "\(if .status != "completed" then "🟡" elif .conclusion == "success" then "✅" else "❌" end) <a href=\"\(.url)\">\(.workflowName)</a> · \(.headBranch) · \(.displayTitle | .[0:40])"')
-                latest=$(gh release view --json tagName --jq .tagName 2>/dev/null || echo "-")
-                .github/scripts/tg.sh send "📊 <b>Status</b>
-          Última release: ${latest}
-
-          ${runs}"
+                git fetch -q origin main dev
+                version_of() { git show "origin/$1:CHANGELOG.md" | grep -m1 -o '^## v[0-9]*\.[0-9]*\.[0-9]*' | cut -c4-; }
+                gh run list --limit 40 --json workflowName,status,conclusion,headBranch,displayTitle,url,createdAt,updatedAt > runs.json
+                latest=$(gh release view --json tagName --jq .tagName 2>/dev/null || echo "nenhuma")
+                .github/scripts/tg.sh send "$(python3 .github/scripts/status.py runs.json "$latest" "$(version_of main)" "$(version_of dev)")"
                 ;;
               /help|/start)
                 .github/scripts/tg.sh send "🤖 <b>Telegram Pro CI — ajuda</b>
@@ -117,7 +115,7 @@ jobs:
           ⏱ Os comandos são lidos a cada ~5 min (o GitHub pode atrasar). Avisos de início, fim e falha dos builds chegam aqui automaticamente."
                 ;;
               *)
-                .github/scripts/tg.sh send "Comando desconhecido: <code>${cmd}</code>. Use /help."
+                .github/scripts/tg.sh send "❓ Comando desconhecido: <code>${cmd}</code>. Envie /help para ver os comandos."
                 ;;
             esac
           done < commands.txt
