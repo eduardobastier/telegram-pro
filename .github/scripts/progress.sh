@@ -15,8 +15,11 @@ brt() { TZ=America/Sao_Paulo date -d "@$1" +%H:%M; }
 esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
 header() {
-    echo "$1 <b>$2</b> · <code>${BRANCH}</code> · $(cat "$STATE/version")"
-    echo "<code>$(git rev-parse --short HEAD)</code> — $(git log -1 --format=%s | cut -c1-60 | esc)"
+    echo "$1 <b>$2</b>"
+    echo
+    echo "<b>Branch:</b> <code>${BRANCH}</code>"
+    echo "<b>Versão:</b> $(cat "$STATE/version")"
+    echo "<b>Commit:</b> <code>$(git rev-parse --short HEAD)</code>"
 }
 
 stage() {
@@ -61,12 +64,12 @@ render_running() {
         header "🟡" "Build em andamento"
         echo
         echo "$(bar "$percent") ${percent}%"
-        echo "Etapa: $(stage)"
-        echo "Início: $(brt "$start") (Brasília)"
+        echo "<b>Etapa:</b> $(stage)"
+        echo "<b>Início:</b> $(brt "$start") (Brasília)"
         if [ "$remaining" -gt 0 ]; then
-            echo "Previsão de término: $(brt "$eta") (faltam ~${remaining} min)"
+            echo "<b>Previsão de término:</b> $(brt "$eta") (faltam ~${remaining} min)"
         else
-            echo "Previsão de término: $(brt "$eta") (passando do tempo previsto)"
+            echo "<b>Previsão de término:</b> $(brt "$eta") (passando do tempo previsto)"
         fi
         echo "<a href=\"${RUN_URL}\">Logs</a>"
     }
@@ -109,8 +112,10 @@ case "$1" in
         edit "$(
             header "$icon" "$title"
             echo
-            echo "Início: $(brt "$start") · Fim: $(brt "$now") (Brasília) · levou ${took} min"
-            [ "$2" = "failure" ] && echo "Etapa: $(stage)"
+            echo "<b>Início:</b> $(brt "$start") (Brasília)"
+            echo "<b>Fim:</b> $(brt "$now") (Brasília)"
+            echo "<b>Duração:</b> ${took} min"
+            [ "$2" = "failure" ] && echo "<b>Etapa:</b> $(stage)"
             [ -n "${3:-}" ] && echo "$3"
             echo "<a href=\"${RUN_URL}\">Logs</a>"
         )"
