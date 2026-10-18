@@ -19,6 +19,7 @@ header() {
     echo
     echo "<b>Branch:</b> <code>${BRANCH}</code>"
     echo "<b>Versão:</b> $(cat "$STATE/version")"
+    echo "<b>Base:</b> Telegram $(grep '^APP_VERSION_NAME=' gradle.properties | cut -d= -f2)"
     echo "<b>Commit:</b> <code>$(git rev-parse --short HEAD)</code>"
 }
 
