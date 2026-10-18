@@ -24,7 +24,8 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
-// Voice/round message transcription with Whisper on Cloudflare Workers AI (same approach as Nekogram's WhisperHelper)
+// Voice/round message transcription without Premium: on-device Android speech recognition,
+// or Whisper on Cloudflare Workers AI (same approach as Nekogram's WhisperHelper)
 public class ProTranscriber {
 
     private static final ExecutorService executor = Executors.newCachedThreadPool();
@@ -34,8 +35,10 @@ public class ProTranscriber {
         void run(String text, String error);
     }
 
-    public static boolean useWorkersAi(int account) {
+    // true when transcription is handled here instead of Telegram's Premium transcribeAudio
+    public static boolean isEnabled(int account) {
         return SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI ||
+            SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_DEVICE ||
             SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_AUTO && !UserConfig.getInstance(account).isPremium();
     }
 
@@ -43,8 +46,16 @@ public class ProTranscriber {
         return !TextUtils.isEmpty(SharedConfig.cfAccountId) && !TextUtils.isEmpty(SharedConfig.cfApiToken);
     }
 
-    // callback runs on a background thread
+    // callback may run on any thread
     public static void transcribe(File file, boolean video, Callback callback) {
+        if (SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI) {
+            transcribeWorkersAi(file, video, callback);
+        } else {
+            ProDeviceTranscriber.transcribe(file, callback);
+        }
+    }
+
+    private static void transcribeWorkersAi(File file, boolean video, Callback callback) {
         if (!hasCredentials()) {
             callback.run(null, LocaleController.getString(R.string.ProCloudflareNotSet));
             return;
