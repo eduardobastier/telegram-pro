@@ -12692,6 +12692,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             ) && currentMessageObject.messageOwner != null && !(MessageObject.getMedia(currentMessageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage) &&
             (currentMessageObject.messageOwner.media == null || currentMessageObject.messageOwner.media.ttl_seconds == 0)
         );
+        if (useTranscribeButton) {
+            TranscribeButton.autoTranscribe(currentMessageObject);
+        }
         updateSeekBarWaveformWidth(null);
     }
 
@@ -18109,6 +18112,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO || documentAttachType == DOCUMENT_ATTACH_TYPE_MUSIC) {
             updateButtonState(false, true, false);
             updateWaveform();
+            if (useTranscribeButton) {
+                TranscribeButton.autoTranscribe(currentMessageObject);
+            }
         } else {
             currentMessageObject.updateQualitiesCached(true);
             if (drawVideoImageButton) {
