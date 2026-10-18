@@ -276,6 +276,12 @@ public class SharedConfig {
     public static int translateStyle;
     public static boolean translateShowOriginal;
     public static boolean autoTranslate;
+    public static final int TRANSCRIBE_PROVIDER_AUTO = 0;
+    public static final int TRANSCRIBE_PROVIDER_PREMIUM = 1;
+    public static final int TRANSCRIBE_PROVIDER_WORKERS_AI = 2;
+    public static int transcribeProvider;
+    public static String cfAccountId;
+    public static String cfApiToken;
     public static boolean updateStickersOrderOnSend = true;
     public static boolean bigCameraForRound;
     public static Boolean useCamera2Force;
@@ -651,6 +657,9 @@ public class SharedConfig {
             translateStyle = preferences.getInt("translateStyle", TRANSLATE_STYLE_POPUP);
             translateShowOriginal = preferences.getBoolean("translateShowOriginal", false);
             autoTranslate = preferences.getBoolean("autoTranslate", false);
+            transcribeProvider = preferences.getInt("transcribeProvider", TRANSCRIBE_PROVIDER_AUTO);
+            cfAccountId = preferences.getString("cfAccountId", "");
+            cfApiToken = preferences.getString("cfApiToken", "");
             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
             streamMkv = preferences.getBoolean("streamMkv", false);
             suggestStickers = preferences.getInt("suggestStickers", 0);
@@ -1380,6 +1389,17 @@ public class SharedConfig {
     public static void toggleAutoTranslate() {
         autoTranslate = !autoTranslate;
         MessagesController.getGlobalMainSettings().edit().putBoolean("autoTranslate", autoTranslate).apply();
+    }
+
+    public static void setTranscribeProvider(int provider) {
+        transcribeProvider = provider;
+        MessagesController.getGlobalMainSettings().edit().putInt("transcribeProvider", transcribeProvider).apply();
+    }
+
+    public static void setCloudflareCredentials(String accountId, String apiToken) {
+        cfAccountId = accountId;
+        cfApiToken = apiToken;
+        MessagesController.getGlobalMainSettings().edit().putString("cfAccountId", cfAccountId).putString("cfApiToken", cfApiToken).apply();
     }
 
     public static void toggleSortContactsByName() {
