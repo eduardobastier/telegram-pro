@@ -2,17 +2,30 @@ name: Build
 
 # Every commit on main is built. When the top version in CHANGELOG.md has no release yet,
 # a GitHub Release is created with the APK and the APK is posted to the Telegram channel.
+# Manual runs can build another branch (e.g. dev): the APK then goes only to the CI group.
+# Progress is reported to the private CI group.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to build
+        type: string
+        default: main
 
 permissions:
   contents: write
 
 concurrency:
-  group: build-main
+  group: build-${{ inputs.branch || github.ref_name }}
   cancel-in-progress: false
+
+env:
+  BRANCH: ${{ inputs.branch || github.ref_name }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  CI_CHAT_ID: ${{ secrets.CI_CHAT_ID }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
   build:
@@ -21,8 +34,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.BRANCH }}
           fetch-depth: 0
           submodules: recursive
+
+      - name: Notify start
+        run: |
+          VERSION=$(grep -m1 -o '^## v[0-9]*\.[0-9]*\.[0-9]*' CHANGELOG.md | cut -c4-)
+          .github/scripts/tg.sh send "🟡 <b>Build iniciado</b>
+          ${VERSION} · <code>${BRANCH}</code> · <code>$(git rev-parse --short HEAD)</code>
+          $(git log -1 --format=%s | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+          <a href=\"${RUN_URL}\">Logs</a>"
 
       - name: Free disk space
         run: |
@@ -64,10 +86,13 @@ jobs:
           BASE_VERSION=$(grep '^APP_VERSION_NAME=' gradle.properties | cut -d= -f2)
           # latest official Telegram commit in our history (not authored by us or the bot)
           BASE_REF=$(git log -1 --format=%H --perl-regexp --author='^(?!Eduardo Bastier|github-actions)')
-          APK="TelegramPro-${VERSION}-${BASE_VERSION}-arm64.apk"
+          SUFFIX=""
+          [ "$BRANCH" = "main" ] || SUFFIX="-${BRANCH}-$(git rev-parse --short HEAD)"
+          APK="TelegramPro-${VERSION}${SUFFIX}-${BASE_VERSION}-arm64.apk"
           cp TMessagesProj_App/build/outputs/apk/afat/release/app.apk "$APK"
           awk -v v="## $VERSION" '/^## /{ if (found) exit; if ($0 == v) { found=1; next } } found' CHANGELOG.md | sed '/^$/d' > notes.txt
-          if gh release view "$VERSION" > /dev/null 2>&1; then NEW=false; else NEW=true; fi
+          NEW=false
+          if [ "$BRANCH" = "main" ] && ! gh release view "$VERSION" > /dev/null 2>&1; then NEW=true; fi
           {
             echo "apk=$APK"
             echo "version=$VERSION"
@@ -98,7 +123,7 @@ jobs:
             echo "### Novidades"
             cat notes.txt
           } > release.md
-          gh release create "$VERSION" "$APK" --target "$GITHUB_SHA" --title "Telegram Pro $VERSION" --notes-file release.md
+          gh release create "$VERSION" "$APK" --target "$(git rev-parse HEAD)" --title "Telegram Pro $VERSION" --notes-file release.md
 
       - name: Send to Telegram channel
         if: steps.meta.outputs.new == 'true'
@@ -137,7 +162,29 @@ jobs:
           open('caption_final.txt', 'w').write('\n'.join(lines))
           PY
           curl -sS --fail-with-body "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-            -F chat_id="${CHAT_ID}" \
-            -F parse_mode=HTML \
+            --form-string chat_id="${CHAT_ID}" \
+            --form-string parse_mode=HTML \
             -F caption="<caption_final.txt" \
             -F document=@"${APK}"
+
+      - name: Notify result
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          APK: ${{ steps.meta.outputs.apk }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          NEW: ${{ steps.meta.outputs.new }}
+        run: |
+          if [ "$JOB_STATUS" != "success" ]; then
+            .github/scripts/tg.sh send "❌ <b>Build falhou</b> · <code>${BRANCH}</code>
+          <a href=\"${RUN_URL}\">Ver logs</a>"
+          elif [ "$NEW" = "true" ]; then
+            .github/scripts/tg.sh send "✅ <b>${VERSION} publicada</b>
+          <a href=\"${{ github.server_url }}/${{ github.repository }}/releases/tag/${VERSION}\">Release</a> · enviada ao canal · <a href=\"${RUN_URL}\">Logs</a>"
+          elif [ "$BRANCH" != "main" ]; then
+            .github/scripts/tg.sh file "$APK" "✅ <b>Build de teste</b> · <code>${BRANCH}</code> · ${VERSION}
+          Não publicado. <a href=\"${RUN_URL}\">Logs</a>"
+          else
+            .github/scripts/tg.sh send "✅ <b>Build concluído</b> · <code>main</code> · ${VERSION}
+          Versão já publicada, nada a enviar. <a href=\"${RUN_URL}\">Logs</a>"
+          fi

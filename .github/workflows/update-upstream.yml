@@ -13,6 +13,10 @@ permissions:
   issues: write
   actions: write
 
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  CI_CHAT_ID: ${{ secrets.CI_CHAT_ID }}
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -33,6 +37,9 @@ jobs:
           UPSTREAM=$(git rev-parse FETCH_HEAD)
           if git merge-base --is-ancestor "$UPSTREAM" HEAD; then
             echo "Already up to date with DrKLO/Telegram@${UPSTREAM:0:7}"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              .github/scripts/tg.sh send "✔️ Já está na versão mais recente do Telegram oficial (<code>${UPSTREAM:0:7}</code>)."
+            fi
             echo "updated=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -40,6 +47,7 @@ jobs:
             git merge --abort
             TITLE="Conflito ao atualizar para DrKLO/Telegram@${UPSTREAM:0:7}"
             if ! gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number' | grep -q .; then
+              .github/scripts/tg.sh send "⚠️ <b>Conflito</b> ao atualizar para o Telegram oficial <code>${UPSTREAM:0:7}</code>. Nada foi publicado; uma issue foi aberta no GitHub."
               gh issue create --title "$TITLE" --body "A nova versão do Telegram oficial (https://github.com/DrKLO/Telegram/commit/${UPSTREAM}) conflita com as mudanças do Telegram Pro. Nada foi publicado. Resolva localmente com \`git fetch upstream && git merge upstream/master\` (ou rebase) na branch dev e depois leve para main."
             fi
             echo "updated=false" >> "$GITHUB_OUTPUT"
@@ -59,6 +67,7 @@ jobs:
           PY
           git commit -am "${VERSION}: base Telegram ${BASE_VERSION}"
           git push origin HEAD:main
+          .github/scripts/tg.sh send "🔄 <b>Telegram ${BASE_VERSION}</b> lançado. Merge feito na main como <b>${VERSION}</b>; build iniciado."
           echo "updated=true" >> "$GITHUB_OUTPUT"
 
       - name: Update dev from main
