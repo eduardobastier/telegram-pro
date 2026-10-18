@@ -2729,6 +2729,14 @@
     <string name="ProTranscribeAuto">Automático</string>
     <string name="ProTranscribePremium">Telegram Premium</string>
     <string name="ProTranscribeWorkersAi">Cloudflare Workers AI</string>
+    <string name="ProTranscribeDevice">No aparelho (Android)</string>
+    <string name="ProTranscribeDeviceUnsupported">Transcrição no aparelho requer Android 13 ou superior.</string>
+    <string name="ProTranscribeDeviceUnavailable">Nenhum serviço de reconhecimento de voz disponível no aparelho.</string>
+    <string name="ProTranscribeMicPermission">Permita o acesso ao microfone do Telegram Pro para transcrever no aparelho.</string>
+    <string name="ProTranscribeDecodeFailed">Não foi possível ler o áudio.</string>
+    <string name="ProTranscribeNothingRecognized">Nenhuma fala reconhecida.</string>
+    <string name="ProTranscribeLanguageUnavailable">Idioma não disponível para reconhecimento no aparelho. Baixe o pacote de idioma em Configurações do Android → Serviços de fala do Google.</string>
+    <string name="ProTranscribeDeviceError">Erro no reconhecimento de voz (%1$d).</string>
     <string name="ProCloudflareCredentials">Credenciais da Cloudflare</string>
     <string name="ProCloudflareAccountId">Account ID</string>
     <string name="ProCloudflareApiToken">API Token</string>
@@ -2736,7 +2744,7 @@
     <string name="ProCloudflareNotSetShort">Não configurado</string>
     <string name="ProCloudflareNotSet">Configure as credenciais da Cloudflare em Configurações → Telegram Pro.</string>
     <string name="ProTranscribeDownloadFirst">Baixe o áudio antes de transcrever.</string>
-    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o Whisper na sua conta Cloudflare (cota grátis diária). Crie um API Token com permissão \"Workers AI\" em dash.cloudflare.com.</string>
+    <string name="ProTranscribeInfo">Automático usa o Telegram se você tiver Premium e, sem Premium, o reconhecimento de voz do próprio aparelho (grátis, o áudio não sai do celular). Cloudflare Workers AI usa o Whisper na sua conta Cloudflare e precisa de Account ID e API Token.</string>
     <string name="ProSpeedHeader">Velocidade</string>
     <string name="ProSpeedInfo">Usa partes maiores e mais conexões paralelas para baixar e enviar arquivos.</string>
     <string name="ProTranslateHeader">Tradução</string>

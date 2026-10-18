@@ -12666,7 +12666,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             (
                 UserConfig.getInstance(currentAccount).isPremium()
                 ||
-                ProTranscriber.useWorkersAi(currentAccount)
+                ProTranscriber.isEnabled(currentAccount)
                 ||
                 TranscribeButton.isFreeTranscribeInChat(currentMessageObject)
                 ||

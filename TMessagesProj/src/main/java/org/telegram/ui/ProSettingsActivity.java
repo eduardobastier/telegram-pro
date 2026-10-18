@@ -37,6 +37,13 @@ public class ProSettingsActivity extends UniversalFragment {
     private static final int TRANSCRIBE_PROVIDER = 10;
     private static final int CLOUDFLARE_CREDENTIALS = 11;
 
+    private static final int[] TRANSCRIBE_PROVIDERS = {
+        SharedConfig.TRANSCRIBE_PROVIDER_AUTO,
+        SharedConfig.TRANSCRIBE_PROVIDER_DEVICE,
+        SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI,
+        SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM
+    };
+
     @Override
     public void onResume() {
         super.onResume();
@@ -69,7 +76,9 @@ public class ProSettingsActivity extends UniversalFragment {
 
         items.add(UItem.asHeader(getString(R.string.ProTranscribeHeader)));
         items.add(UItem.asButton(TRANSCRIBE_PROVIDER, getString(R.string.ProTranscribeProvider), getTranscribeProviderName(SharedConfig.transcribeProvider)));
-        items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
+        if (SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI) {
+            items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
+        }
         items.add(UItem.asShadow(getString(R.string.ProTranscribeInfo)));
     }
 
@@ -110,9 +119,10 @@ public class ProSettingsActivity extends UniversalFragment {
             case TRANSCRIBE_PROVIDER:
                 showChoice(getString(R.string.ProTranscribeProvider), new CharSequence[] {
                     getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_AUTO),
-                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM),
-                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI)
-                }, SharedConfig::setTranscribeProvider);
+                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_DEVICE),
+                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI),
+                    getTranscribeProviderName(SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM)
+                }, which -> SharedConfig.setTranscribeProvider(TRANSCRIBE_PROVIDERS[which]));
                 return;
             case CLOUDFLARE_CREDENTIALS:
                 showCloudflareCredentials();
@@ -202,6 +212,8 @@ public class ProSettingsActivity extends UniversalFragment {
                 return getString(R.string.ProTranscribePremium);
             case SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI:
                 return getString(R.string.ProTranscribeWorkersAi);
+            case SharedConfig.TRANSCRIBE_PROVIDER_DEVICE:
+                return getString(R.string.ProTranscribeDevice);
             default:
                 return getString(R.string.ProTranscribeAuto);
         }

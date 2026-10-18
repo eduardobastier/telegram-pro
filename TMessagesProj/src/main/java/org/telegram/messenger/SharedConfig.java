@@ -279,6 +279,7 @@ public class SharedConfig {
     public static final int TRANSCRIBE_PROVIDER_AUTO = 0;
     public static final int TRANSCRIBE_PROVIDER_PREMIUM = 1;
     public static final int TRANSCRIBE_PROVIDER_WORKERS_AI = 2;
+    public static final int TRANSCRIBE_PROVIDER_DEVICE = 3;
     public static int transcribeProvider;
     public static String cfAccountId;
     public static String cfApiToken;
