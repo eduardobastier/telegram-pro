@@ -127,6 +127,7 @@ import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.ProMessageStore;
 import org.telegram.messenger.ProTranscriber;
 import org.telegram.messenger.R;
 import org.telegram.messenger.RichMessageLayout;
@@ -18528,6 +18529,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
         if (currentMessageObject.messageOwner.video_processing_pending) {
             timeString = formatString(R.string.ScheduledTimeApprox, timeString);
+        }
+        if (timeString.length() > 0 && ProMessageStore.isDeleted(currentAccount, currentMessageObject)) {
+            timeString = getString(R.string.ProDeletedMark) + " " + timeString;
         }
         if (signString != null) {
             if (messageObject.messageOwner.via_business_bot_id != 0) {

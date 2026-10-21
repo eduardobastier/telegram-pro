@@ -2252,10 +2252,19 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         int diff = (view.getTop() - pTop) + view.getMeasuredHeight();
 
                         long pullingTime = System.currentTimeMillis() - startArchivePullingTime;
-                        if (diff < height || pullingTime < PullForegroundDrawable.minPullingTime) {
+                        if (diff < height || pullingTime < PullForegroundDrawable.minPullingTime || SharedConfig.pullToOpenArchive) {
+                            boolean openArchive = SharedConfig.pullToOpenArchive && diff >= height && pullingTime >= PullForegroundDrawable.minPullingTime;
                             disableActionBarScrolling = true;
                             smoothScrollBy(0, diff, CubicBezierInterpolator.EASE_OUT_QUINT);
                             parentPage.archivePullViewState = ARCHIVE_ITEM_STATE_HIDDEN;
+                            if (openArchive) {
+                                try {
+                                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+                                } catch (Exception ignored) {}
+                                Bundle args = new Bundle();
+                                args.putInt("folderId", 1);
+                                presentFragment(new DialogsActivity(args));
+                            }
                         } else {
                             if (parentPage.archivePullViewState != ARCHIVE_ITEM_STATE_SHOWED) {
                                 if (getViewOffset() == 0) {
@@ -7022,6 +7031,16 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         super.onResume();
         if (dialogStoriesCell != null) {
             dialogStoriesCell.onResume();
+        }
+        if (folderId == 0 && viewPages != null && SharedConfig.archiveHidden) {
+            for (ViewPage viewPage : viewPages) {
+                if (viewPage != null && viewPage.listView != null && viewPage.dialogsType == DIALOGS_TYPE_DEFAULT && viewPage.archivePullViewState == ARCHIVE_ITEM_STATE_PINNED) {
+                    viewPage.listView.updatePullState();
+                    if (hasHiddenArchive() && viewPage.layoutManager.findFirstVisibleItemPosition() == 0) {
+                        viewPage.layoutManager.scrollToPositionWithOffset(1, 0);
+                    }
+                }
+            }
         }
         if (rightSlidingDialogContainer != null) {
             rightSlidingDialogContainer.onResume();

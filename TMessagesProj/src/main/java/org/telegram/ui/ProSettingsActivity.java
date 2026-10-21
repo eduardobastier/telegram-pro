@@ -7,6 +7,8 @@ import android.view.View;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 
+import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.ProMessageStore;
 import org.telegram.messenger.ProTranscriber;
 import org.telegram.messenger.ProTranslators;
 import org.telegram.messenger.ProUpdater;
@@ -15,6 +17,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.TranslateController;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.TranslateAlert2;
 import org.telegram.ui.Components.UItem;
@@ -25,6 +28,15 @@ import java.util.ArrayList;
 import java.util.HashSet;
 
 public class ProSettingsActivity extends UniversalFragment {
+
+    public static final int PAGE_MAIN = 0;
+    public static final int PAGE_SPEED = 1;
+    public static final int PAGE_TRANSLATE = 2;
+    public static final int PAGE_TRANSCRIBE = 3;
+    public static final int PAGE_GHOST = 4;
+    public static final int PAGE_CHATS = 5;
+    public static final int PAGE_UPDATES = 6;
+    public static final int PAGE_MESSAGES = 7;
 
     private static final int BOOST_DOWNLOAD = 1;
     private static final int BOOST_UPLOAD = 2;
@@ -40,6 +52,16 @@ public class ProSettingsActivity extends UniversalFragment {
     private static final int AUTO_TRANSCRIBE = 12;
     private static final int AUTO_UPDATE = 13;
     private static final int CHECK_UPDATE = 14;
+    private static final int GHOST_MODE = 15;
+    private static final int GHOST_NO_READ = 16;
+    private static final int GHOST_NO_TYPING = 17;
+    private static final int GHOST_OFFLINE = 18;
+    private static final int GHOST_NO_STORY_VIEWS = 19;
+    private static final int PULL_TO_OPEN_ARCHIVE = 20;
+    private static final int SAVE_DELETED = 21;
+    private static final int SAVE_EDITS = 22;
+    private static final int CLEAR_SAVED = 23;
+    private static final int OPEN_PAGE = 100;
 
     private static final int[] TRANSCRIBE_PROVIDERS = {
         SharedConfig.TRANSCRIBE_PROVIDER_AUTO,
@@ -47,6 +69,16 @@ public class ProSettingsActivity extends UniversalFragment {
         SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI,
         SharedConfig.TRANSCRIBE_PROVIDER_PREMIUM
     };
+
+    private final int page;
+
+    public ProSettingsActivity() {
+        this(PAGE_MAIN);
+    }
+
+    public ProSettingsActivity(int page) {
+        this.page = page;
+    }
 
     @Override
     public void onResume() {
@@ -58,43 +90,128 @@ public class ProSettingsActivity extends UniversalFragment {
 
     @Override
     protected CharSequence getTitle() {
-        return getString(R.string.ProSettings);
+        switch (page) {
+            case PAGE_SPEED: return getString(R.string.ProSpeedHeader);
+            case PAGE_TRANSLATE: return getString(R.string.ProTranslateHeader);
+            case PAGE_TRANSCRIBE: return getString(R.string.ProTranscribeHeader);
+            case PAGE_GHOST: return getString(R.string.ProGhostHeader);
+            case PAGE_CHATS: return getString(R.string.ProChatsHeader);
+            case PAGE_UPDATES: return getString(R.string.ProUpdateHeader);
+            case PAGE_MESSAGES: return getString(R.string.ProMessagesHeader);
+            default: return getString(R.string.ProSettings);
+        }
     }
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
-        items.add(UItem.asHeader(getString(R.string.ProSpeedHeader)));
-        items.add(UItem.asCheck(BOOST_DOWNLOAD, getString(R.string.ProBoostDownload)).setChecked(SharedConfig.boostDownloadSpeed));
-        items.add(UItem.asCheck(BOOST_UPLOAD, getString(R.string.ProBoostUpload)).setChecked(SharedConfig.boostUploadSpeed));
-        items.add(UItem.asShadow(getString(R.string.ProSpeedInfo)));
-
-        items.add(UItem.asHeader(getString(R.string.ProTranslateHeader)));
-        items.add(UItem.asCheck(FREE_CHAT_TRANSLATE, getString(R.string.ProFreeChatTranslate)).setChecked(SharedConfig.freeChatTranslate));
-        items.add(UItem.asButton(TRANSLATE_STYLE, getString(R.string.ProTranslateStyle), getStyleName(SharedConfig.translateStyle)));
-        items.add(UItem.asCheck(TRANSLATE_SHOW_ORIGINAL, getString(R.string.ProTranslateShowOriginal)).setChecked(SharedConfig.translateShowOriginal));
-        items.add(UItem.asButton(TRANSLATE_PROVIDER, getString(R.string.ProTranslateProvider), ProTranslators.getName(SharedConfig.translateProvider)));
-        items.add(UItem.asButton(TRANSLATE_TO, getString(R.string.ProTranslateTo), TranslateAlert2.capitalFirst(TranslateAlert2.languageName(TranslateAlert2.getToLanguage()))));
-        items.add(UItem.asButton(DO_NOT_TRANSLATE, getString(R.string.ProDoNotTranslate), getRestrictedLanguagesValue()));
-        items.add(UItem.asCheck(AUTO_TRANSLATE, getString(R.string.ProAutoTranslate)).setChecked(SharedConfig.autoTranslate));
-        items.add(UItem.asShadow(getString(R.string.ProTranslateInfo)));
-
-        items.add(UItem.asHeader(getString(R.string.ProTranscribeHeader)));
-        items.add(UItem.asButton(TRANSCRIBE_PROVIDER, getString(R.string.ProTranscribeProvider), getTranscribeProviderName(SharedConfig.transcribeProvider)));
-        items.add(UItem.asCheck(AUTO_TRANSCRIBE, getString(R.string.ProAutoTranscribe)).setChecked(SharedConfig.autoTranscribe));
-        if (SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI) {
-            items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
+        switch (page) {
+            case PAGE_MAIN:
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_SPEED, R.drawable.msg_speed, getString(R.string.ProSpeedHeader)));
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_TRANSLATE, R.drawable.msg_translate, getString(R.string.ProTranslateHeader)));
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_TRANSCRIBE, R.drawable.msg_voicechat, getString(R.string.ProTranscribeHeader)));
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_MESSAGES, R.drawable.msg_edit, getString(R.string.ProMessagesHeader)));
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_GHOST, R.drawable.msg_secret, getString(R.string.ProGhostHeader), getString(SharedConfig.ghostMode ? R.string.ProOn : R.string.ProOff)));
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_CHATS, R.drawable.msg_archive, getString(R.string.ProChatsHeader)));
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_UPDATES, R.drawable.msg_retry, getString(R.string.ProUpdateHeader), ProUpdater.currentVersion()));
+                items.add(UItem.asShadow(null));
+                break;
+            case PAGE_SPEED:
+                items.add(UItem.asCheck(BOOST_DOWNLOAD, getString(R.string.ProBoostDownload)).setChecked(SharedConfig.boostDownloadSpeed));
+                items.add(UItem.asCheck(BOOST_UPLOAD, getString(R.string.ProBoostUpload)).setChecked(SharedConfig.boostUploadSpeed));
+                items.add(UItem.asShadow(getString(R.string.ProSpeedInfo)));
+                break;
+            case PAGE_TRANSLATE:
+                items.add(UItem.asCheck(FREE_CHAT_TRANSLATE, getString(R.string.ProFreeChatTranslate)).setChecked(SharedConfig.freeChatTranslate));
+                items.add(UItem.asCheck(AUTO_TRANSLATE, getString(R.string.ProAutoTranslate)).setChecked(SharedConfig.autoTranslate));
+                items.add(UItem.asShadow(null));
+                items.add(UItem.asHeader(getString(R.string.ProTranslateProviderHeader)));
+                items.add(UItem.asButton(TRANSLATE_PROVIDER, getString(R.string.ProTranslateProvider), ProTranslators.getName(SharedConfig.translateProvider)));
+                items.add(UItem.asButton(TRANSLATE_TO, getString(R.string.ProTranslateTo), TranslateAlert2.capitalFirst(TranslateAlert2.languageName(TranslateAlert2.getToLanguage()))));
+                items.add(UItem.asButton(DO_NOT_TRANSLATE, getString(R.string.ProDoNotTranslate), getRestrictedLanguagesValue()));
+                items.add(UItem.asShadow(null));
+                items.add(UItem.asHeader(getString(R.string.ProTranslateLookHeader)));
+                items.add(UItem.asButton(TRANSLATE_STYLE, getString(R.string.ProTranslateStyle), getStyleName(SharedConfig.translateStyle)));
+                items.add(UItem.asCheck(TRANSLATE_SHOW_ORIGINAL, getString(R.string.ProTranslateShowOriginal)).setChecked(SharedConfig.translateShowOriginal));
+                items.add(UItem.asShadow(getString(R.string.ProTranslateInfo)));
+                break;
+            case PAGE_TRANSCRIBE:
+                items.add(UItem.asButton(TRANSCRIBE_PROVIDER, getString(R.string.ProTranscribeProvider), getTranscribeProviderName(SharedConfig.transcribeProvider)));
+                if (SharedConfig.transcribeProvider == SharedConfig.TRANSCRIBE_PROVIDER_WORKERS_AI) {
+                    items.add(UItem.asButton(CLOUDFLARE_CREDENTIALS, getString(R.string.ProCloudflareCredentials), getString(ProTranscriber.hasCredentials() ? R.string.ProCloudflareSet : R.string.ProCloudflareNotSetShort)));
+                }
+                items.add(UItem.asCheck(AUTO_TRANSCRIBE, getString(R.string.ProAutoTranscribe)).setChecked(SharedConfig.autoTranscribe));
+                items.add(UItem.asShadow(getString(R.string.ProTranscribeInfo)));
+                break;
+            case PAGE_GHOST:
+                items.add(UItem.asCheck(GHOST_MODE, getString(R.string.ProGhostEnable)).setChecked(SharedConfig.ghostMode));
+                items.add(UItem.asShadow(getString(R.string.ProGhostInfo)));
+                if (SharedConfig.ghostMode) {
+                    items.add(UItem.asHeader(getString(R.string.ProGhostOptionsHeader)));
+                    items.add(UItem.asCheck(GHOST_NO_READ, getString(R.string.ProGhostNoRead)).setChecked(SharedConfig.ghostNoRead));
+                    items.add(UItem.asCheck(GHOST_NO_TYPING, getString(R.string.ProGhostNoTyping)).setChecked(SharedConfig.ghostNoTyping));
+                    items.add(UItem.asCheck(GHOST_OFFLINE, getString(R.string.ProGhostOffline)).setChecked(SharedConfig.ghostOffline));
+                    items.add(UItem.asCheck(GHOST_NO_STORY_VIEWS, getString(R.string.ProGhostNoStoryViews)).setChecked(SharedConfig.ghostNoStoryViews));
+                    items.add(UItem.asShadow(getString(R.string.ProGhostOptionsInfo)));
+                }
+                break;
+            case PAGE_MESSAGES:
+                items.add(UItem.asCheck(SAVE_DELETED, getString(R.string.ProSaveDeleted)).setChecked(SharedConfig.saveDeletedMessages));
+                items.add(UItem.asCheck(SAVE_EDITS, getString(R.string.ProSaveEdits)).setChecked(SharedConfig.saveEditHistory));
+                items.add(UItem.asShadow(getString(R.string.ProMessagesInfo)));
+                items.add(UItem.asButton(CLEAR_SAVED, getString(R.string.ProClearSaved)).red());
+                items.add(UItem.asShadow(null));
+                break;
+            case PAGE_CHATS:
+                items.add(UItem.asCheck(PULL_TO_OPEN_ARCHIVE, getString(R.string.ProPullToOpenArchive)).setChecked(SharedConfig.pullToOpenArchive));
+                items.add(UItem.asShadow(getString(R.string.ProPullToOpenArchiveInfo)));
+                break;
+            case PAGE_UPDATES:
+                items.add(UItem.asCheck(AUTO_UPDATE, getString(R.string.ProUpdateAuto)).setChecked(SharedConfig.proAutoUpdate));
+                items.add(UItem.asButton(CHECK_UPDATE, getString(R.string.ProUpdateCheckNow), ProUpdater.currentVersion()));
+                items.add(UItem.asShadow(getString(R.string.ProUpdateInfo)));
+                break;
         }
-        items.add(UItem.asShadow(getString(R.string.ProTranscribeInfo)));
-
-        items.add(UItem.asHeader(getString(R.string.ProUpdateHeader)));
-        items.add(UItem.asCheck(AUTO_UPDATE, getString(R.string.ProUpdateAuto)).setChecked(SharedConfig.proAutoUpdate));
-        items.add(UItem.asButton(CHECK_UPDATE, getString(R.string.ProUpdateCheckNow), ProUpdater.currentVersion()));
-        items.add(UItem.asShadow(getString(R.string.ProUpdateInfo)));
     }
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        if (item.id > OPEN_PAGE) {
+            presentFragment(new ProSettingsActivity(item.id - OPEN_PAGE));
+            return;
+        }
         switch (item.id) {
+            case GHOST_MODE:
+                SharedConfig.setProBoolean("ghostMode", !SharedConfig.ghostMode);
+                break;
+            case GHOST_NO_READ:
+                SharedConfig.setProBoolean("ghostNoRead", !SharedConfig.ghostNoRead);
+                break;
+            case GHOST_NO_TYPING:
+                SharedConfig.setProBoolean("ghostNoTyping", !SharedConfig.ghostNoTyping);
+                break;
+            case GHOST_OFFLINE:
+                SharedConfig.setProBoolean("ghostOffline", !SharedConfig.ghostOffline);
+                break;
+            case GHOST_NO_STORY_VIEWS:
+                SharedConfig.setProBoolean("ghostNoStoryViews", !SharedConfig.ghostNoStoryViews);
+                break;
+            case SAVE_DELETED:
+                SharedConfig.setProBoolean("saveDeletedMessages", !SharedConfig.saveDeletedMessages);
+                break;
+            case SAVE_EDITS:
+                SharedConfig.setProBoolean("saveEditHistory", !SharedConfig.saveEditHistory);
+                break;
+            case CLEAR_SAVED:
+                ProMessageStore.clearAll();
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.done, getString(R.string.ProClearSavedDone)).show();
+                return;
+            case PULL_TO_OPEN_ARCHIVE:
+                SharedConfig.setProBoolean("pullToOpenArchive", !SharedConfig.pullToOpenArchive);
+                if (SharedConfig.pullToOpenArchive && !SharedConfig.archiveHidden) {
+                    SharedConfig.toggleArchiveHidden();
+                    NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
+                }
+                break;
             case BOOST_DOWNLOAD:
                 SharedConfig.toggleBoostDownloadSpeed();
                 break;

@@ -287,6 +287,14 @@ public class SharedConfig {
     public static String proSkippedUpdate;
     public static String cfAccountId;
     public static String cfApiToken;
+    public static boolean ghostMode;
+    public static boolean ghostNoRead;
+    public static boolean ghostNoTyping;
+    public static boolean ghostOffline;
+    public static boolean ghostNoStoryViews;
+    public static boolean pullToOpenArchive;
+    public static boolean saveDeletedMessages;
+    public static boolean saveEditHistory;
     public static boolean updateStickersOrderOnSend = true;
     public static boolean bigCameraForRound;
     public static Boolean useCamera2Force;
@@ -669,6 +677,14 @@ public class SharedConfig {
             proSkippedUpdate = preferences.getString("proSkippedUpdate", "");
             cfAccountId = preferences.getString("cfAccountId", "");
             cfApiToken = preferences.getString("cfApiToken", "");
+            ghostMode = preferences.getBoolean("ghostMode", false);
+            ghostNoRead = preferences.getBoolean("ghostNoRead", true);
+            ghostNoTyping = preferences.getBoolean("ghostNoTyping", true);
+            ghostOffline = preferences.getBoolean("ghostOffline", true);
+            ghostNoStoryViews = preferences.getBoolean("ghostNoStoryViews", true);
+            pullToOpenArchive = preferences.getBoolean("pullToOpenArchive", false);
+            saveDeletedMessages = preferences.getBoolean("saveDeletedMessages", false);
+            saveEditHistory = preferences.getBoolean("saveEditHistory", false);
             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
             streamMkv = preferences.getBoolean("streamMkv", false);
             suggestStickers = preferences.getInt("suggestStickers", 0);
@@ -1429,6 +1445,21 @@ public class SharedConfig {
         cfAccountId = accountId;
         cfApiToken = apiToken;
         MessagesController.getGlobalMainSettings().edit().putString("cfAccountId", cfAccountId).putString("cfApiToken", cfApiToken).apply();
+    }
+
+    public static void setProBoolean(String key, boolean value) {
+        switch (key) {
+            case "ghostMode": ghostMode = value; break;
+            case "ghostNoRead": ghostNoRead = value; break;
+            case "ghostNoTyping": ghostNoTyping = value; break;
+            case "ghostOffline": ghostOffline = value; break;
+            case "ghostNoStoryViews": ghostNoStoryViews = value; break;
+            case "pullToOpenArchive": pullToOpenArchive = value; break;
+            case "saveDeletedMessages": saveDeletedMessages = value; break;
+            case "saveEditHistory": saveEditHistory = value; break;
+            default: return;
+        }
+        MessagesController.getGlobalMainSettings().edit().putBoolean(key, value).apply();
     }
 
     public static void toggleSortContactsByName() {
