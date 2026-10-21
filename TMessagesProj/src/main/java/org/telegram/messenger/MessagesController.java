@@ -12203,6 +12203,9 @@ public class MessagesController extends BaseController implements NotificationCe
                 getNotificationCenter().postNotificationName(NotificationCenter.scheduledMessagesUpdated, dialogId, objects.size(), false);
             }
 
+            if (mode == 0) {
+                ProLastSeen.recordMessages(currentAccount, objects);
+            }
             if (!DialogObject.isEncryptedDialog(dialogId) && mode != ChatActivity.MODE_QUICK_REPLIES) {
                 int finalFirst_unread_final = first_unread_final;
                 Timer.Task t5 = Timer.start(loaderLogger, "loadReplyMessagesForMessages");
@@ -19609,6 +19612,9 @@ public class MessagesController extends BaseController implements NotificationCe
             } else if (baseUpdate instanceof TL_update.TL_updateMessageReactions) {
                 TL_update.TL_updateMessageReactions update = (TL_update.TL_updateMessageReactions) baseUpdate;
                 long dialogId = MessageObject.getPeerId(update.peer);
+                if (update.reactions instanceof TLRPC.TL_messageReactions) {
+                    ProLastSeen.recordReactions(currentAccount, (TLRPC.TL_messageReactions) update.reactions);
+                }
 
                 getMessagesStorage().updateMessageReactions(dialogId, update.msg_id, update.reactions);
 
@@ -21916,6 +21922,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (messages == null || messages.isEmpty()) {
             return false;
         }
+        ProLastSeen.recordMessages(currentAccount, messages);
         final boolean scheduled = mode == ChatActivity.MODE_SCHEDULED;
         final boolean quickReplies = mode == ChatActivity.MODE_QUICK_REPLIES;
         final boolean welcomeMessages = mode == ChatActivity.MODE_WELCOME_MESSAGES;
