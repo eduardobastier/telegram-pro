@@ -10393,7 +10393,14 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(star, R.drawable.msg_fave, dp(48), LocaleController.getString(R.string.AddToFavorites)));
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, dp(48), LocaleController.getString(R.string.Copy)));
             if (!isSavedMessages && getDialogId() != UserObject.VERIFY) {
-                actionModeViews.add(actionMode.addItemWithWidth(forward_no_quote, R.drawable.msg_forward_noquote, dp(48), LocaleController.getString(R.string.ProForwardNoQuote)));
+                if (SharedConfig.forwardNoQuoteButton) {
+                    ActionBarMenuItem forwardNoQuoteItem = actionMode.addItemWithWidth(forward_no_quote, R.drawable.msg_forward, dp(48), LocaleController.getString(R.string.ProForwardNoQuote));
+                    RLottieDrawable nameHideIcon = new RLottieDrawable(R.raw.name_hide, dp(24), dp(24));
+                    nameHideIcon.setAllowDecodeSingleFrame(true);
+                    nameHideIcon.setAutoRepeat(0);
+                    forwardNoQuoteItem.setIcon(nameHideIcon);
+                    actionModeViews.add(forwardNoQuoteItem);
+                }
                 actionModeViews.add(actionMode.addItemWithWidth(forward, R.drawable.msg_forward, dp(48), LocaleController.getString(R.string.Forward)));
             }
             actionModeViews.add(actionMode.addItemWithWidth(share, R.drawable.msg_shareout, dp(48), LocaleController.getString(R.string.ShareFile)));
@@ -46447,9 +46454,11 @@ public class ChatActivity extends BaseFragment implements
                     items.add(LocaleController.getString(R.string.Forward));
                     options.add(OPTION_FORWARD);
                     icons.add(R.drawable.msg_forward);
-                    items.add(LocaleController.getString(R.string.ProForwardNoQuote));
-                    options.add(OPTION_PRO_FORWARD_NO_QUOTE);
-                    icons.add(R.drawable.msg_forward_noquote);
+                    if (SharedConfig.forwardNoQuoteButton) {
+                        items.add(LocaleController.getString(R.string.ProForwardNoQuote));
+                        options.add(OPTION_PRO_FORWARD_NO_QUOTE);
+                        icons.add(R.drawable.msg_forward);
+                    }
                 }
                 if (allowUnpin) {
                     items.add(LocaleController.getString(R.string.UnpinMessage));

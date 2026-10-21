@@ -295,6 +295,8 @@ public class SharedConfig {
     public static boolean pullToOpenArchive;
     public static boolean saveDeletedMessages;
     public static boolean saveEditHistory;
+    public static boolean ghostSaveLastSeen;
+    public static boolean forwardNoQuoteButton;
     public static boolean updateStickersOrderOnSend = true;
     public static boolean bigCameraForRound;
     public static Boolean useCamera2Force;
@@ -685,6 +687,8 @@ public class SharedConfig {
             pullToOpenArchive = preferences.getBoolean("pullToOpenArchive", false);
             saveDeletedMessages = preferences.getBoolean("saveDeletedMessages", false);
             saveEditHistory = preferences.getBoolean("saveEditHistory", false);
+            ghostSaveLastSeen = preferences.getBoolean("ghostSaveLastSeen", false);
+            forwardNoQuoteButton = preferences.getBoolean("forwardNoQuoteButton", true);
             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
             streamMkv = preferences.getBoolean("streamMkv", false);
             suggestStickers = preferences.getInt("suggestStickers", 0);
@@ -1457,6 +1461,8 @@ public class SharedConfig {
             case "pullToOpenArchive": pullToOpenArchive = value; break;
             case "saveDeletedMessages": saveDeletedMessages = value; break;
             case "saveEditHistory": saveEditHistory = value; break;
+            case "ghostSaveLastSeen": ghostSaveLastSeen = value; break;
+            case "forwardNoQuoteButton": forwardNoQuoteButton = value; break;
             default: return;
         }
         MessagesController.getGlobalMainSettings().edit().putBoolean(key, value).apply();
