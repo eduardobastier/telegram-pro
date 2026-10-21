@@ -178,6 +178,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.NotificationsController;
+import org.telegram.messenger.ProMessageStore;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SecretChatHelper;
 import org.telegram.messenger.SendMessagesHelper;
@@ -1262,6 +1263,8 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_VIEW_STATISTICS = 115;
     public final static int OPTION_WELCOME_REVERT = 116;
     public final static int OPTION_SEND_MONEY = 117;
+    public final static int OPTION_PRO_EDIT_HISTORY = 190;
+    public final static int OPTION_PRO_FORWARD_NO_QUOTE = 191;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -1640,6 +1643,9 @@ public class ChatActivity extends BaseFragment implements
 
     private final static int copy = 10;
     private final static int forward = 11;
+    private final static int forward_no_quote = 1191;
+    private boolean proForwardNoQuote;
+    public boolean proForwardNoQuotePending;
     private final static int delete = 12;
     private final static int chat_enc_timer = 13;
     private final static int chat_menu_attach = 14;
@@ -2972,6 +2978,7 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.didLoadSendAsPeers)
             .add(NotificationCenter.closeChatActivity)
             .add(NotificationCenter.messagesDeleted)
+            .add(NotificationCenter.proMessagesDeleted)
             .add(NotificationCenter.historyCleared)
             .add(NotificationCenter.messageReceivedByServer)
             .add(NotificationCenter.messageReceivedByAck)
@@ -3801,6 +3808,10 @@ public class ChatActivity extends BaseFragment implements
                     createDeleteMessagesAlert(null, null);
                 } else if (id == forward) {
                     openForward(true);
+                    proForwardNoQuote = false;
+                } else if (id == forward_no_quote) {
+                    openForward(true);
+                    proForwardNoQuote = true;
                 } else if (id == share) {
                     share();
                 } else if (id == open_direct) {
@@ -10382,6 +10393,7 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(star, R.drawable.msg_fave, dp(48), LocaleController.getString(R.string.AddToFavorites)));
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, dp(48), LocaleController.getString(R.string.Copy)));
             if (!isSavedMessages && getDialogId() != UserObject.VERIFY) {
+                actionModeViews.add(actionMode.addItemWithWidth(forward_no_quote, R.drawable.msg_forward_noquote, dp(48), LocaleController.getString(R.string.ProForwardNoQuote)));
                 actionModeViews.add(actionMode.addItemWithWidth(forward, R.drawable.msg_forward, dp(48), LocaleController.getString(R.string.Forward)));
             }
             actionModeViews.add(actionMode.addItemWithWidth(share, R.drawable.msg_shareout, dp(48), LocaleController.getString(R.string.ShareFile)));
@@ -15219,6 +15231,10 @@ public class ChatActivity extends BaseFragment implements
                     messagePreviewParams.attach(forwardingPreviewView);
                 }
                 messagePreviewParams.updateForward(messageObjectsToForward, dialog_id);
+                if (proForwardNoQuotePending) {
+                    proForwardNoQuotePending = false;
+                    messagePreviewParams.hideForwardSendersName = true;
+                }
                 if (messagePreviewParams.isEmpty() && editingMessageObject == null) {
                     messagePreviewParams = null;
                 }
@@ -19291,6 +19307,11 @@ public class ChatActivity extends BaseFragment implements
                 ActionBarMenuItem starItem = actionBar.createActionMode().getItem(star);
                 ActionBarMenuItem editItem = actionBar.createActionMode().getItem(edit);
                 ActionBarMenuItem forwardItem = actionBar.createActionMode().getItem(forward);
+                ActionBarMenuItem forwardNoQuoteItem = actionBar.createActionMode().getItem(forward_no_quote);
+                if (forwardNoQuoteItem != null) {
+                    forwardNoQuoteItem.setEnabled(cantForwardMessagesCount == 0 && !(isPeerNoForwards() || hasSelectedNoforwardsMessage()));
+                    forwardNoQuoteItem.setAlpha(forwardNoQuoteItem.isEnabled() ? 1.0f : 0.5f);
+                }
                 ActionBarMenuItem deleteItem = actionBar.createActionMode().getItem(delete);
                 ActionBarMenuItem tagItem = actionBar.createActionMode().getItem(tag_message);
                 ActionBarMenuItem shareItem = actionBar.createActionMode().getItem(share);
@@ -22378,6 +22399,8 @@ public class ChatActivity extends BaseFragment implements
             if (updated && chatAdapter != null) {
                 chatAdapter.notifyDataSetChanged(false);
             }
+        } else if (id == NotificationCenter.proMessagesDeleted) {
+            updateVisibleRows(messageObject -> messageObject != null && ProMessageStore.isDeleted(currentAccount, messageObject));
         } else if (id == NotificationCenter.messagesDeleted) {
             boolean scheduled = (Boolean) args[2];
             if (scheduled != (chatMode == MODE_SCHEDULED)) {
@@ -31077,6 +31100,7 @@ public class ChatActivity extends BaseFragment implements
                         case OPTION_SAVE_TO_DOWNLOADS_OR_MUSIC:
                         case OPTION_SHARE:
                         case OPTION_FORWARD:
+                        case OPTION_PRO_FORWARD_NO_QUOTE:
                         case OPTION_REPLY:
                             options.remove(i);
                             items.remove(i);
@@ -31105,6 +31129,12 @@ public class ChatActivity extends BaseFragment implements
                 items.add(LocaleController.getString(R.string.EditOfferTime));
                 options.add(OPTION_SUGGESTION_EDIT_TIME);
                 icons.add(R.drawable.msg_calendar2);
+            }
+
+            if (selectedObject != null && ProMessageStore.hasEditHistory(currentAccount, selectedObject)) {
+                items.add(LocaleController.getString(R.string.ProEditHistory));
+                options.add(OPTION_PRO_EDIT_HISTORY);
+                icons.add(R.drawable.msg_edit);
             }
 
             if (options.isEmpty() && optionsView == null) {
@@ -33483,6 +33513,7 @@ public class ChatActivity extends BaseFragment implements
                 break;
             }
             case OPTION_FORWARD: {
+                proForwardNoQuote = false;
                 if (getMessagesController().isFrozen()) {
                     AccountFrozenAlert.show(currentAccount);
                     selectedObject = null;
@@ -33941,6 +33972,15 @@ public class ChatActivity extends BaseFragment implements
             }
             case OPTION_GIFT: {
                 showDialog(new GiftSheet(getContext(), currentAccount, getDialogId(), null, null));
+                break;
+            }
+            case OPTION_PRO_FORWARD_NO_QUOTE: {
+                processSelectedOption(OPTION_FORWARD);
+                proForwardNoQuote = true;
+                return;
+            }
+            case OPTION_PRO_EDIT_HISTORY: {
+                showProEditHistory(selectedObject);
                 break;
             }
             case OPTION_SEND_MONEY: {
@@ -34593,7 +34633,7 @@ public class ChatActivity extends BaseFragment implements
                         params.suggestionParams = messageSuggestionParams;
                         getSendMessagesHelper().sendMessage(params);
                     }
-                    getSendMessagesHelper().sendMessage(fmessages, did, false, false, notify, scheduleDate, scheduleRepeatPeriod, null, -1, price == null ? 0 : price, getSendMonoForumPeerId(), getSendMessageSuggestionParams());
+                    getSendMessagesHelper().sendMessage(fmessages, did, proForwardNoQuote, false, notify, scheduleDate, scheduleRepeatPeriod, null, -1, price == null ? 0 : price, getSendMonoForumPeerId(), getSendMessageSuggestionParams());
                 }
                 fragment.finishFragment();
                 createUndoView();
@@ -34680,6 +34720,7 @@ public class ChatActivity extends BaseFragment implements
                         };
                         chatActivity.showFieldPanelForReplyQuote(replyingMessageObject, replyingQuote);
                     } else {
+                        chatActivity.proForwardNoQuotePending = proForwardNoQuote;
                         chatActivity.showFieldPanelForForward(true, fmessages);
                     }
                     if (chatActivity.getDialogId() == getDialogId() && !AndroidUtilities.isTablet()) {
@@ -34708,6 +34749,7 @@ public class ChatActivity extends BaseFragment implements
                 if (fragment.isQuote && replyingMessageObject != null) {
                     showFieldPanelForReplyQuote(replyingMessageObject, replyingQuote);
                 } else {
+                    proForwardNoQuotePending = proForwardNoQuote;
                     showFieldPanelForForward(true, fmessages);
                 }
                 if (AndroidUtilities.isTablet()) {
@@ -35102,6 +35144,33 @@ public class ChatActivity extends BaseFragment implements
         if (lastVisibleItem != RecyclerView.NO_POSITION) {
             chatLayoutManager.scrollToPositionWithOffset(lastVisibleItem, top);
         }
+    }
+
+    private void showProEditHistory(MessageObject messageObject) {
+        if (messageObject == null || getParentActivity() == null) {
+            return;
+        }
+        final ArrayList<ProMessageStore.Version> versions = ProMessageStore.getEditHistory(currentAccount, messageObject);
+        final SpannableStringBuilder text = new SpannableStringBuilder();
+        for (ProMessageStore.Version version : versions) {
+            appendProEditVersion(text, version.date, version.text);
+        }
+        appendProEditVersion(text, messageObject.messageOwner.edit_date != 0 ? messageObject.messageOwner.edit_date : messageObject.messageOwner.date, getString(R.string.ProEditHistoryCurrent) + "\n" + (messageObject.messageOwner.message == null ? "" : messageObject.messageOwner.message));
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), getResourceProvider());
+        builder.setTitle(getString(R.string.ProEditHistory));
+        builder.setMessage(text);
+        builder.setPositiveButton(getString(R.string.OK), null);
+        showDialog(builder.create());
+    }
+
+    private static void appendProEditVersion(SpannableStringBuilder text, int date, String body) {
+        if (text.length() > 0) {
+            text.append("\n\n");
+        }
+        int start = text.length();
+        text.append(LocaleController.formatDateAudio(date, true));
+        text.setSpan(new TypefaceSpan(AndroidUtilities.bold()), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.append("\n").append(TextUtils.isEmpty(body) ? "—" : body);
     }
 
     private void checkEditTimer() {
@@ -46378,6 +46447,9 @@ public class ChatActivity extends BaseFragment implements
                     items.add(LocaleController.getString(R.string.Forward));
                     options.add(OPTION_FORWARD);
                     icons.add(R.drawable.msg_forward);
+                    items.add(LocaleController.getString(R.string.ProForwardNoQuote));
+                    options.add(OPTION_PRO_FORWARD_NO_QUOTE);
+                    icons.add(R.drawable.msg_forward_noquote);
                 }
                 if (allowUnpin) {
                     items.add(LocaleController.getString(R.string.UnpinMessage));
