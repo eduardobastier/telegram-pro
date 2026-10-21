@@ -396,6 +396,10 @@ public class ConnectionsManager extends BaseController {
     }
 
     private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
+        if (ProGhostMode.needsOfflineAfter(object) && !(onComplete instanceof ProGhostMode.OfflineAfterSend)) {
+            sendRequestInternal(object, new ProGhostMode.OfflineAfterSend(onComplete, this), onCompleteTimestamp, onQuickAck, onWriteToSocket, flags, datacenterId, connectionType, immediate, requestToken);
+            return;
+        }
         if (ProGhostMode.shouldDrop(object, this)) {
             if (BuildVars.LOGS_ENABLED) {
                 FileLog.d("ghost mode: dropped " + object);

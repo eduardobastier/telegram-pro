@@ -113,6 +113,9 @@ public class TranslateController extends BaseController {
         if (!getMessagesController().isTranslationsAutoEnabled() && !SharedConfig.freeChatTranslate) {
             return false;
         }
+        if (SharedConfig.freeChatTranslate) {
+            return true;
+        }
         if (chatTranslateEnabled == null) {
             chatTranslateEnabled = messagesController.getMainSettings().getBoolean("translate_chat_button", true);
         }

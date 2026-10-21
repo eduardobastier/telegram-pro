@@ -2759,7 +2759,8 @@
     <string name="ProGhostOptionsHeader">Ocultar</string>
     <string name="ProGhostNoRead">Não enviar confirmação de leitura</string>
     <string name="ProGhostNoTyping">Não mostrar \"digitando…\"</string>
-    <string name="ProGhostOffline">Ficar sempre offline</string>
+    <string name="ProGhostOffline">Não mostrar online</string>
+    <string name="ProGhostOfflineInfo">Você só aparece online por alguns segundos quando envia uma mensagem para a pessoa.</string>
     <string name="ProGhostNoStoryViews">Ver stories sem aparecer</string>
     <string name="ProGhostOptionsInfo">Ao responder ou enviar uma mensagem num chat, o Telegram marca esse chat como lido para a outra pessoa.</string>
     <string name="ProChatsHeader">Chats</string>
@@ -2785,6 +2786,14 @@
     <string name="ProChatListHeader">Lista de chats</string>
     <string name="ProForwardHeader">Encaminhar</string>
     <string name="ProForwardNoQuoteInfo">Mostra \"Encaminhar sem citar\" no menu da mensagem e na barra de seleção, para enviar sem o nome de quem escreveu.</string>
+    <string name="ProConversationsHeader">Conversas</string>
+    <string name="ProOtherHeader">Outro</string>
+    <string name="ProChannel">Canal</string>
+    <string name="ProChatsInfo">Puxe a lista de chats para baixo para abrir o Arquivo. \"Encaminhar sem citar\" aparece no menu da mensagem e na barra de seleção.</string>
+    <string name="ProVersionPro">Telegram Pro</string>
+    <string name="ProVersionBase">Telegram (base)</string>
+    <string name="ProUpdateNeverChecked">Nunca</string>
+    <string name="ProUpdateSkipped">Versão ignorada</string>
     <string name="ProUpdateInfo">As atualizações vêm das releases do GitHub do Telegram Pro. Na primeira vez, o Android pede permissão para instalar apps desta fonte.</string>
     <string name="ProUpdateAvailable">Telegram Pro %1$s disponível</string>
     <string name="ProUpdateInstall">Atualizar</string>

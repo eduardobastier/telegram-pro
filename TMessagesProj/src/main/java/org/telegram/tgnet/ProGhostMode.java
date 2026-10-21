@@ -1,11 +1,46 @@
 package org.telegram.tgnet;
 
-import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Utilities;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_stories;
 
 public class ProGhostMode {
+
+    public static boolean needsOfflineAfter(TLObject object) {
+        return SharedConfig.ghostMode && SharedConfig.ghostOffline && (
+            object instanceof TLRPC.TL_messages_sendMessage ||
+            object instanceof TLRPC.TL_messages_sendMedia ||
+            object instanceof TLRPC.TL_messages_sendMultiMedia ||
+            object instanceof TLRPC.TL_messages_forwardMessages ||
+            object instanceof TLRPC.TL_messages_sendInlineBotResult
+        );
+    }
+
+    // Sending a message makes the server mark us online: once the server answers, go back offline.
+    public static class OfflineAfterSend implements RequestDelegate {
+        private final RequestDelegate original;
+        private final ConnectionsManager connectionsManager;
+
+        public OfflineAfterSend(RequestDelegate original, ConnectionsManager connectionsManager) {
+            this.original = original;
+            this.connectionsManager = connectionsManager;
+        }
+
+        @Override
+        public void run(TLObject response, TLRPC.TL_error error) {
+            if (original != null) {
+                original.run(response, error);
+            }
+            for (long delay : new long[] { 0, 1000, 5000 }) {
+                Utilities.globalQueue.postRunnable(() -> {
+                    TL_account.updateStatus req = new TL_account.updateStatus();
+                    req.offline = true;
+                    connectionsManager.sendRequest(req, null);
+                }, delay);
+            }
+        }
+    }
 
     public static boolean shouldDrop(TLObject object, ConnectionsManager connectionsManager) {
         if (!SharedConfig.ghostMode || object == null) {
@@ -32,19 +67,6 @@ public class ProGhostMode {
         if (SharedConfig.ghostOffline) {
             if (object instanceof TL_account.updateStatus) {
                 ((TL_account.updateStatus) object).offline = true;
-            } else if (object instanceof TLRPC.TL_messages_sendMessage ||
-                object instanceof TLRPC.TL_messages_sendMedia ||
-                object instanceof TLRPC.TL_messages_sendMultiMedia ||
-                object instanceof TLRPC.TL_messages_forwardMessages ||
-                object instanceof TLRPC.TL_messages_sendInlineBotResult) {
-                // Sending a message makes the server mark us online; go back offline right after.
-                for (long delay : new long[] { 800, 3000 }) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        TL_account.updateStatus req = new TL_account.updateStatus();
-                        req.offline = true;
-                        connectionsManager.sendRequest(req, null);
-                    }, delay);
-                }
             }
         }
         return false;
