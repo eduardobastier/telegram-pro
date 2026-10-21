@@ -2,11 +2,17 @@ package org.telegram.ui;
 
 import static org.telegram.messenger.LocaleController.getString;
 
+import android.content.Context;
 import android.util.TypedValue;
+import android.view.Gravity;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.ProMessageStore;
 import org.telegram.messenger.ProTranscriber;
@@ -15,6 +21,7 @@ import org.telegram.messenger.ProUpdater;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.TranslateController;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
@@ -61,6 +68,11 @@ public class ProSettingsActivity extends UniversalFragment {
     private static final int SAVE_DELETED = 21;
     private static final int SAVE_EDITS = 22;
     private static final int CLEAR_SAVED = 23;
+    private static final int GHOST_SAVE_LAST_SEEN = 24;
+    private static final int FORWARD_NO_QUOTE = 25;
+    private static final int LINK_SOURCE = 26;
+    private static final int LINK_RELEASES = 27;
+    private static final String REPO_URL = "https://github.com/eduardobastier/telegram-pro";
     private static final int OPEN_PAGE = 100;
 
     private static final int[] TRANSCRIBE_PROVIDERS = {
@@ -78,6 +90,53 @@ public class ProSettingsActivity extends UniversalFragment {
 
     public ProSettingsActivity(int page) {
         this.page = page;
+    }
+
+    private View headerView;
+
+    @Override
+    public View createView(Context context) {
+        View view = super.createView(context);
+        actionBar.setAllowOverlayTitle(false);
+        actionBar.setTitle(getTitle());
+        listView.setSections();
+        actionBar.setAdaptiveBackground(listView);
+        return view;
+    }
+
+    private View getHeaderView() {
+        if (headerView == null) {
+            Context context = getParentActivity();
+            LinearLayout layout = new LinearLayout(context);
+            layout.setOrientation(LinearLayout.VERTICAL);
+            layout.setGravity(Gravity.CENTER_HORIZONTAL);
+            layout.setPadding(0, AndroidUtilities.dp(12), 0, AndroidUtilities.dp(14));
+
+            ImageView icon = new ImageView(context);
+            try {
+                icon.setImageDrawable(context.getPackageManager().getApplicationIcon(context.getPackageName()));
+            } catch (Exception ignore) {
+                icon.setImageResource(R.mipmap.ic_launcher);
+            }
+            layout.addView(icon, LayoutHelper.createLinear(88, 88));
+
+            TextView name = new TextView(context);
+            name.setText(getString(R.string.ProSettings));
+            name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
+            name.setTypeface(AndroidUtilities.bold());
+            name.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            name.setGravity(Gravity.CENTER);
+            layout.addView(name, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
+
+            TextView version = new TextView(context);
+            version.setText(ProUpdater.currentVersion() + " · Telegram " + BuildVars.BUILD_VERSION_STRING);
+            version.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            version.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            version.setGravity(Gravity.CENTER);
+            layout.addView(version, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+            headerView = layout;
+        }
+        return headerView;
     }
 
     @Override
@@ -106,13 +165,17 @@ public class ProSettingsActivity extends UniversalFragment {
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         switch (page) {
             case PAGE_MAIN:
+                items.add(UItem.asCustomShadow(getHeaderView()));
                 items.add(UItem.asButton(OPEN_PAGE + PAGE_SPEED, R.drawable.msg_speed, getString(R.string.ProSpeedHeader)));
                 items.add(UItem.asButton(OPEN_PAGE + PAGE_TRANSLATE, R.drawable.msg_translate, getString(R.string.ProTranslateHeader)));
                 items.add(UItem.asButton(OPEN_PAGE + PAGE_TRANSCRIBE, R.drawable.msg_voicechat, getString(R.string.ProTranscribeHeader)));
-                items.add(UItem.asButton(OPEN_PAGE + PAGE_MESSAGES, R.drawable.msg_edit, getString(R.string.ProMessagesHeader)));
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_MESSAGES, R.drawable.msg_message, getString(R.string.ProMessagesHeader)));
                 items.add(UItem.asButton(OPEN_PAGE + PAGE_GHOST, R.drawable.msg_secret, getString(R.string.ProGhostHeader), getString(SharedConfig.ghostMode ? R.string.ProOn : R.string.ProOff)));
                 items.add(UItem.asButton(OPEN_PAGE + PAGE_CHATS, R.drawable.msg_archive, getString(R.string.ProChatsHeader)));
                 items.add(UItem.asButton(OPEN_PAGE + PAGE_UPDATES, R.drawable.msg_retry, getString(R.string.ProUpdateHeader), ProUpdater.currentVersion()));
+                items.add(UItem.asShadow(null));
+                items.add(UItem.asButton(LINK_SOURCE, R.drawable.msg_link2, getString(R.string.ProSourceCode), "GitHub"));
+                items.add(UItem.asButton(LINK_RELEASES, R.drawable.msg_download, getString(R.string.ProReleases), getString(R.string.ProReleasesValue)));
                 items.add(UItem.asShadow(null));
                 break;
             case PAGE_SPEED:
@@ -153,6 +216,9 @@ public class ProSettingsActivity extends UniversalFragment {
                     items.add(UItem.asCheck(GHOST_NO_STORY_VIEWS, getString(R.string.ProGhostNoStoryViews)).setChecked(SharedConfig.ghostNoStoryViews));
                     items.add(UItem.asShadow(getString(R.string.ProGhostOptionsInfo)));
                 }
+                items.add(UItem.asHeader(getString(R.string.ProGhostLastSeenHeader)));
+                items.add(UItem.asCheck(GHOST_SAVE_LAST_SEEN, getString(R.string.ProGhostSaveLastSeen)).setChecked(SharedConfig.ghostSaveLastSeen));
+                items.add(UItem.asShadow(getString(R.string.ProGhostSaveLastSeenInfo)));
                 break;
             case PAGE_MESSAGES:
                 items.add(UItem.asCheck(SAVE_DELETED, getString(R.string.ProSaveDeleted)).setChecked(SharedConfig.saveDeletedMessages));
@@ -162,8 +228,12 @@ public class ProSettingsActivity extends UniversalFragment {
                 items.add(UItem.asShadow(null));
                 break;
             case PAGE_CHATS:
+                items.add(UItem.asHeader(getString(R.string.ProChatListHeader)));
                 items.add(UItem.asCheck(PULL_TO_OPEN_ARCHIVE, getString(R.string.ProPullToOpenArchive)).setChecked(SharedConfig.pullToOpenArchive));
                 items.add(UItem.asShadow(getString(R.string.ProPullToOpenArchiveInfo)));
+                items.add(UItem.asHeader(getString(R.string.ProForwardHeader)));
+                items.add(UItem.asCheck(FORWARD_NO_QUOTE, getString(R.string.ProForwardNoQuote)).setChecked(SharedConfig.forwardNoQuoteButton));
+                items.add(UItem.asShadow(getString(R.string.ProForwardNoQuoteInfo)));
                 break;
             case PAGE_UPDATES:
                 items.add(UItem.asCheck(AUTO_UPDATE, getString(R.string.ProUpdateAuto)).setChecked(SharedConfig.proAutoUpdate));
@@ -195,6 +265,18 @@ public class ProSettingsActivity extends UniversalFragment {
             case GHOST_NO_STORY_VIEWS:
                 SharedConfig.setProBoolean("ghostNoStoryViews", !SharedConfig.ghostNoStoryViews);
                 break;
+            case GHOST_SAVE_LAST_SEEN:
+                SharedConfig.setProBoolean("ghostSaveLastSeen", !SharedConfig.ghostSaveLastSeen);
+                break;
+            case FORWARD_NO_QUOTE:
+                SharedConfig.setProBoolean("forwardNoQuoteButton", !SharedConfig.forwardNoQuoteButton);
+                break;
+            case LINK_SOURCE:
+                Browser.openUrl(getParentActivity(), REPO_URL);
+                return;
+            case LINK_RELEASES:
+                Browser.openUrl(getParentActivity(), REPO_URL + "/releases");
+                return;
             case SAVE_DELETED:
                 SharedConfig.setProBoolean("saveDeletedMessages", !SharedConfig.saveDeletedMessages);
                 break;

@@ -19973,6 +19973,7 @@ public class MessagesController extends BaseController implements NotificationCe
                             currentUser.id = update.user_id;
                             currentUser.status = update.status;
                         }
+                        ProLastSeen.record(currentAccount, update.user_id, update.status);
                         TLRPC.User toDbUser = new TLRPC.TL_user();
                         toDbUser.id = update.user_id;
                         toDbUser.status = update.status;

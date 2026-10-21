@@ -2942,6 +2942,13 @@ public class LocaleController {
             return getString("ALongTimeAgo", R.string.ALongTimeAgo);
         } else {
             int currentTime = ConnectionsManager.getInstance(currentAccount).getCurrentTime();
+            ProLastSeen.record(currentAccount, user.id, user.status);
+            if (user.status.expires <= currentTime && (user.status.expires <= -100 && user.status.expires >= -102 || user.status.expires <= -1000 && user.status.expires >= -1002)) {
+                int saved = ProLastSeen.get(currentAccount, user.id);
+                if (saved > 0) {
+                    return formatDateOnline(saved, madeShorter) + " " + getString(R.string.ProLastSeenSaved);
+                }
+            }
             if (user.status.expires > currentTime) {
                 if (isOnline != null) {
                     isOnline[0] = true;
