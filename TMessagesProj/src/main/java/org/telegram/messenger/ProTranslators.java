@@ -7,6 +7,7 @@ import app.nekogram.translator.BaseTranslator;
 import app.nekogram.translator.GoogleAppTranslator;
 import app.nekogram.translator.LingoTranslator;
 import app.nekogram.translator.MicrosoftTranslator;
+import app.nekogram.translator.Result;
 import app.nekogram.translator.SogouTranslator;
 import app.nekogram.translator.TranslatorConfig;
 import app.nekogram.translator.YandexTranslator;
@@ -55,6 +56,20 @@ public class ProTranslators {
         }
     }
 
+    private static boolean sameBaseLanguage(String a, String b) {
+        return b != null && a.split("[-_]")[0].equalsIgnoreCase(b.split("[-_]")[0]);
+    }
+
+    private static boolean isRestricted(String language) {
+        final String base = language.split("[-_]")[0].toLowerCase();
+        for (String restricted : org.telegram.ui.RestrictedLanguagesSelectActivity.getRestrictedLanguages()) {
+            if (restricted != null && restricted.split("[-_]")[0].equalsIgnoreCase(base)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static String getName(int provider) {
         switch (provider) {
             case SharedConfig.TRANSLATE_PROVIDER_MICROSOFT:
@@ -85,7 +100,14 @@ public class ProTranslators {
             String translation = null;
             boolean rateLimit = false;
             try {
-                translation = translator.translate(text, null, toLanguage).getTranslation();
+                final Result result = translator.translate(text, null, toLanguage);
+                translation = result.getTranslation();
+                // Like Nekogram: trust the language the provider detected. If the text already is in the
+                // target language (or one marked "do not translate"), keep the original text.
+                final String source = result.getSourceLanguage();
+                if (source != null && (sameBaseLanguage(source, toLanguage) || isRestricted(source))) {
+                    translation = text;
+                }
             } catch (Exception e) {
                 rateLimit = e instanceof Http429Exception;
                 FileLog.e(e);
