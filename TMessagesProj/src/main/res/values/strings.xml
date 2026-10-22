@@ -2794,6 +2794,7 @@
     <string name="ProVersionBase">Telegram (base)</string>
     <string name="ProUpdateNeverChecked">Nunca</string>
     <string name="ProUpdateSkipped">Versão ignorada</string>
+    <string name="ProUndoTranslate">Desfazer tradução</string>
     <string name="ProUpdateInfo">As atualizações vêm das releases do GitHub do Telegram Pro. Na primeira vez, o Android pede permissão para instalar apps desta fonte.</string>
     <string name="ProUpdateAvailable">Telegram Pro %1$s disponível</string>
     <string name="ProUpdateInstall">Atualizar</string>

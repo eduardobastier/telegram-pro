@@ -32015,6 +32015,24 @@ public class ChatActivity extends BaseFragment implements
                         }
                         processSelectedOption(options.get(i));
                     });
+                    if (option == OPTION_PRO_FORWARD_NO_QUOTE) {
+                        // Same icon Nekogram uses for "forward without quote" (also used in the selection bar).
+                        RLottieDrawable nameHideIcon = new RLottieDrawable(R.raw.name_hide, dp(24), dp(24));
+                        nameHideIcon.setAllowDecodeSingleFrame(true);
+                        nameHideIcon.setAutoRepeat(0);
+                        cell.imageView.setAnimation(nameHideIcon);
+                    }
+                    if (option == OPTION_TRANSLATE && selectedObject != null && selectedObject.messageOwner != null && selectedObject.messageOwner.inlineTranslated) {
+                        // Like Nekogram: a message translated in place offers "Undo translation" and skips language detection.
+                        cell.setVisibility(View.VISIBLE);
+                        cell.setOnClickListener(e -> {
+                            if (selectedObject != null) {
+                                getMessagesController().getTranslateController().toggleInlineTranslation(selectedObject);
+                            }
+                            closeMenu(true);
+                        });
+                        continue;
+                    }
                     if (option == OPTION_TRANSLATE) {
                         final boolean translateEnabled = getMessagesController().getTranslateController().isContextTranslateEnabled();
                         String toLangDefault = LocaleController.getInstance().getCurrentLocale().getLanguage();
@@ -32065,7 +32083,7 @@ public class ChatActivity extends BaseFragment implements
                                 ArrayList<TLRPC.MessageEntity> entities = selectedObject != null && selectedObject.messageOwner != null ? selectedObject.messageOwner.entities : null;
                                 if (SharedConfig.translateStyle == SharedConfig.TRANSLATE_STYLE_INLINE) {
                                     getMessagesController().getTranslateController().toggleInlineTranslation(selectedObject);
-                                    closeMenu(false);
+                                    closeMenu(true);
                                     return;
                                 }
                                 TranslateAlert2 alert = TranslateAlert2.showAlert(getParentActivity(), this, currentAccount, inputPeer, messageIdToTranslate[0], selectedObject.summarized, fromLang, toLangValue, finalMessageText, entities, noforwardsOrPaidMedia, onLinkPress, () -> dimBehindView(false));
@@ -32128,7 +32146,7 @@ public class ChatActivity extends BaseFragment implements
                                 ArrayList<TLRPC.MessageEntity> entities = selectedObject != null && selectedObject.messageOwner != null ? selectedObject.messageOwner.entities : null;
                                 if (SharedConfig.translateStyle == SharedConfig.TRANSLATE_STYLE_INLINE) {
                                     getMessagesController().getTranslateController().toggleInlineTranslation(selectedObject);
-                                    closeMenu(false);
+                                    closeMenu(true);
                                     return;
                                 }
                                 TranslateAlert2 alert = TranslateAlert2.showAlert(getParentActivity(), this, currentAccount, inputPeer, messageIdToTranslate[0], selectedObject.summarized, fromLang[0], toLangValue, finalMessageText, entities, noforwardsOrPaidMedia, onLinkPress, () -> dimBehindView(false));
@@ -32169,7 +32187,7 @@ public class ChatActivity extends BaseFragment implements
 
                                     getMessagesController().getTranslateController().toggleInlineTranslation(selectedObject);
 
-                                    closeMenu(false);
+                                    closeMenu(true);
 
                                     return;
 
@@ -46117,8 +46135,8 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_PIN);
                     icons.add(R.drawable.msg_pin);
                 }
-                if (selectedObject != null && !selectedObject.isEphemeral() && selectedObject.contentType == 0 && ((!TextUtils.isEmpty(selectedObject.getMessageTextToTranslate(groupedMessages, null)) && !selectedObject.isAnimatedEmoji() && !selectedObject.isDice()) || (selectedObject.type == MessageObject.TYPE_ARTICLE && selectedObject.messageOwner != null && selectedObject.messageOwner.rich_message != null && !selectedObject.translated))) {
-                    items.add(LocaleController.getString(R.string.TranslateMessage));
+                if (selectedObject != null && selectedObject.messageOwner != null && selectedObject.messageOwner.inlineTranslated || selectedObject != null && !selectedObject.isEphemeral() && !selectedObject.translated && selectedObject.contentType == 0 && ((!TextUtils.isEmpty(selectedObject.getMessageTextToTranslate(groupedMessages, null)) && !selectedObject.isAnimatedEmoji() && !selectedObject.isDice()) || (selectedObject.type == MessageObject.TYPE_ARTICLE && selectedObject.messageOwner != null && selectedObject.messageOwner.rich_message != null && !selectedObject.translated))) {
+                    items.add(selectedObject.messageOwner != null && selectedObject.messageOwner.inlineTranslated ? LocaleController.getString(R.string.ProUndoTranslate) : LocaleController.getString(R.string.TranslateMessage));
                     options.add(OPTION_TRANSLATE);
                     icons.add(R.drawable.msg_translate);
                 }
@@ -46469,8 +46487,8 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_PIN);
                     icons.add(R.drawable.msg_pin);
                 }
-                if (selectedObject != null && !selectedObject.isEphemeral() && selectedObject.contentType == 0 && ((!TextUtils.isEmpty(selectedObject.getMessageTextToTranslate(selectedObjectGroup, null)) && !selectedObject.isAnimatedEmoji() && !selectedObject.isDice()) || (selectedObject.type == MessageObject.TYPE_ARTICLE && selectedObject.messageOwner != null && selectedObject.messageOwner.rich_message != null && !selectedObject.translated))) {
-                    items.add(LocaleController.getString(R.string.TranslateMessage));
+                if (selectedObject != null && selectedObject.messageOwner != null && selectedObject.messageOwner.inlineTranslated || selectedObject != null && !selectedObject.isEphemeral() && !selectedObject.translated && selectedObject.contentType == 0 && ((!TextUtils.isEmpty(selectedObject.getMessageTextToTranslate(selectedObjectGroup, null)) && !selectedObject.isAnimatedEmoji() && !selectedObject.isDice()) || (selectedObject.type == MessageObject.TYPE_ARTICLE && selectedObject.messageOwner != null && selectedObject.messageOwner.rich_message != null && !selectedObject.translated))) {
+                    items.add(selectedObject.messageOwner != null && selectedObject.messageOwner.inlineTranslated ? LocaleController.getString(R.string.ProUndoTranslate) : LocaleController.getString(R.string.TranslateMessage));
                     options.add(OPTION_TRANSLATE);
                     icons.add(R.drawable.msg_translate);
                 }

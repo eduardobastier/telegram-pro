@@ -683,6 +683,14 @@ public class TranslateController extends BaseController {
                         NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messageTranslated, finalMessageObject, true);
                     });
                 }
+            } else if (isAlreadyInLanguage(finalMessageObject, language)) {
+                // The message is already in the target language (or one marked "do not translate"): keep it as is.
+                if (finalMessageObject.messageOwner.translatedText != null) {
+                    finalMessageObject.messageOwner.translatedText = null;
+                    finalMessageObject.messageOwner.translatedToLanguage = null;
+                    getMessagesStorage().updateMessageCustomParams(dialogId, finalMessageObject.messageOwner);
+                    NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messageTranslated, finalMessageObject);
+                }
             } else if (
                 (finalMessageObject.messageOwner.voiceTranscriptionOpen && finalMessageObject.messageOwner.voiceTranscriptionFinal ? finalMessageObject.messageOwner.translatedVoiceTranscription : finalMessageObject.messageOwner.translatedText) == null &&
                 finalMessageObject.messageOwner.translatedPoll == null ||
@@ -772,9 +780,35 @@ public class TranslateController extends BaseController {
         }
     }
 
+    private boolean isAlreadyInLanguage(MessageObject messageObject, String language) {
+        if (!SharedConfig.freeChatTranslate || messageObject.messageOwner.voiceTranscriptionOpen) {
+            return false;
+        }
+        final String original = messageObject.messageOwner.originalLanguage;
+        if (original == null || UNKNOWN_LANGUAGE.equals(original)) {
+            return false;
+        }
+        final String from = normalizeLanguage(original);
+        final String to = normalizeLanguage(language);
+        return from != null && to != null && from.split("[-_]")[0].equals(to.split("[-_]")[0]) || isLanguageRestricted(original);
+    }
+
+    private static boolean sameText(String a, String b) {
+        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+    }
+
     private static TLRPC.TL_textWithEntities withOriginalText(TLRPC.Message message, TLRPC.TL_textWithEntities translated) {
         if (translated == null || message == null || TextUtils.isEmpty(message.message)) {
             return translated;
+        }
+        if (sameText(message.message, translated.text)) {
+            // Nothing was translated: show the original once instead of "original -------- original".
+            final TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
+            result.text = message.message;
+            if (message.entities != null) {
+                result.entities.addAll(message.entities);
+            }
+            return result;
         }
         final String separator = "\n--------\n";
         final TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();

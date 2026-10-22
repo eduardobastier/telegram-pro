@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.1
+- Notificações instantâneas: o app agora recebe push pelo Firebase mesmo fechado
+- Traduzir/Desfazer tradução no menu da mensagem
+- Mensagens que já estão no seu idioma não são mais traduzidas (nem repetidas com "--------")
+- Corrigido o travamento da tela ao traduzir uma mensagem
+- Corrigido o fechamento do app ao tocar numa mensagem traduzida
+- Ícone próprio para "Encaminhar sem citar" no menu da mensagem
+
 ## v1.3.0
 - Base atualizada para o Telegram 13.0.3
 - Modo fantasma: não enviar confirmação de leitura, não mostrar "digitando…", não mostrar online e ver stories sem aparecer
