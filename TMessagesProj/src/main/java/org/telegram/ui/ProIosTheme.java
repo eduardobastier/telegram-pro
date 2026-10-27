@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
 public class ProIosTheme {
 
     private static final String LIGHT = "iOS Light";
-    private static final String DARK = "iOS Dark";
+    private static final String DARK = "iOS Black";
 
     // iOS system colors (light).
     private static final String[][] LIGHT_COLORS = {
@@ -173,19 +173,38 @@ public class ProIosTheme {
     }
 
     // Bump when the colors above change, so installed iOS themes get regenerated on the next start.
-    private static final int VERSION = 10;
+    private static final int VERSION = 11;
 
     // Call at startup: refresh the iOS themes if Liquid Glass is on and they are outdated.
     public static void ensureUpToDate() {
         try {
-            // Never rewrite a theme that is already installed: the user's current theme must survive updates.
-            if (!ProGlass.isEnabled() || prefs().getInt("proIosThemeVersion", 0) != 0) {
+            if (!ProGlass.isEnabled()) {
                 return;
             }
-            apply();
+            final int installed = prefs().getInt("proIosThemeVersion", 0);
+            if (installed == 0) {
+                apply();
+            } else if (installed < VERSION) {
+                // Only the dark theme changes ("iOS Black"); the light theme the user has stays untouched.
+                final boolean wasDark = Theme.isCurrentThemeDark();
+                final Theme.ThemeInfo dark = installDark();
+                prefs().edit().putInt("proIosThemeVersion", VERSION).apply();
+                if (dark != null && wasDark) {
+                    Theme.applyTheme(dark, true);
+                }
+            }
         } catch (Exception e) {
             FileLog.e(e);
         }
+    }
+
+    // The default dark theme for Liquid Glass: "iOS Black" (assets/ios_black.attheme, used as is).
+    private static Theme.ThemeInfo installDark() throws Exception {
+        final Theme.ThemeInfo dark = Theme.installThemeFile(write(DARK, new String[0][], "ios_black.attheme"), DARK);
+        if (dark != null) {
+            Theme.setCurrentNightTheme(dark);
+        }
+        return dark;
     }
 
     // Call when Liquid Glass is turned on.
@@ -201,7 +220,7 @@ public class ProIosTheme {
                     .apply();
             }
             final Theme.ThemeInfo light = Theme.installThemeFile(write(LIGHT, LIGHT_COLORS, null), LIGHT);
-            final Theme.ThemeInfo dark = Theme.installThemeFile(write(DARK, DARK_COLORS, "night.attheme"), DARK);
+            final Theme.ThemeInfo dark = installDark();
             if (dark != null) {
                 Theme.setCurrentNightTheme(dark);
             }

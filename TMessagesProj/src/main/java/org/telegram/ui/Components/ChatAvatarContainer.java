@@ -425,7 +425,9 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
             final int widths = (titleTextView != null ? titleTextView.getTextWidth() : 0) * 31
                 + (subtitleTextView != null ? subtitleTextView.getTextWidth() : 0);
             if (widths != proLastTextWidths) {
+                // The texts are laid out to their own width: a new status ("typing…") needs a new layout.
                 proLastTextWidths = widths;
+                requestLayout();
                 ((View) getParent()).invalidate();
             }
         }
@@ -871,8 +873,25 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
                 }
             }
         }
-        final int textLeft = leftPadding + dp(13);
-        final int textRight = hasAvatar ? avatarLeft - dp(18) : width - dp(13);
+        final int minLeft = leftPadding + dp(13);
+        final int maxRight = hasAvatar ? avatarLeft - dp(18) : width - dp(13);
+        // Like iOS, center the title on the screen; fall back to the free space when it doesn't fit.
+        int textLeft = minLeft, textRight = maxRight;
+        if (getParent() instanceof View && ((View) getParent()).getWidth() > 0) {
+            final int center = (int) (((View) getParent()).getWidth() / 2f - getX());
+            int textWidth = 0;
+            for (View text : new View[] { titleTextView, subtitleTextView }) {
+                if (text instanceof org.telegram.ui.ActionBar.SimpleTextView && text.getVisibility() == VISIBLE) {
+                    final org.telegram.ui.ActionBar.SimpleTextView stv = (org.telegram.ui.ActionBar.SimpleTextView) text;
+                    textWidth = Math.max(textWidth, stv.getTextWidth() + stv.getPaddingLeft() + stv.getPaddingRight() + stv.getSideDrawablesSize());
+                }
+            }
+            final int half = textWidth / 2 + 1;
+            if (center - half >= minLeft && center + half <= maxRight) {
+                textLeft = center - half;
+                textRight = center + half;
+            }
+        }
         // The iOS capsule is shorter: lift the texts so they sit centered with room below.
         final int lift = dp(2);
         for (View text : new View[] { titleTextView, subtitleTextView, animatedSubtitleTextView }) {
@@ -894,14 +913,13 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         if (view == null) {
             return;
         }
+        int contentWidth = view.getMeasuredWidth();
         if (view instanceof org.telegram.ui.ActionBar.SimpleTextView) {
-            // Span the whole area and center the text inside it: the text can change (status, typing)
-            // without a new layout, and a view sized to the old text would cut the new one.
-            ((org.telegram.ui.ActionBar.SimpleTextView) view).setGravity(Gravity.CENTER_HORIZONTAL);
-            view.layout(left, view.getTop(), right, view.getBottom());
-            return;
+            // SimpleTextView measures to the available width; center by the real text width.
+            final org.telegram.ui.ActionBar.SimpleTextView text = (org.telegram.ui.ActionBar.SimpleTextView) view;
+            contentWidth = Math.min(contentWidth, text.getTextWidth() + text.getPaddingLeft() + text.getPaddingRight() + text.getSideDrawablesSize());
         }
-        final int width = Math.min(view.getMeasuredWidth(), right - left);
+        final int width = Math.min(contentWidth, right - left);
         final int newLeft = left + Math.max(0, (right - left - width) / 2);
         view.layout(newLeft, view.getTop(), newLeft + width, view.getBottom());
     }
