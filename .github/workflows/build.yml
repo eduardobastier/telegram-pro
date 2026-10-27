@@ -2,7 +2,7 @@ name: Build
 run-name: Build ${{ inputs.branch || github.ref_name }}
 
 # Every commit on main is built. When the top version in CHANGELOG.md has no release yet,
-# a GitHub Release is created with the APK and the APK is posted to the Telegram channel.
+# a GitHub Release is created. Every successful main build posts its APK to the Telegram channel.
 # Manual runs can build another branch (e.g. dev): the APK then goes only to the CI group.
 # Progress is reported to the private CI group.
 on:
@@ -14,10 +14,6 @@ on:
         description: Branch to build
         type: string
         default: main
-      notify_telegram:
-        description: Send build notifications and APK to Telegram
-        type: boolean
-        default: true
 
 permissions:
   contents: write
@@ -44,7 +40,6 @@ jobs:
           submodules: recursive
 
       - name: Live status in the CI group
-        if: github.event_name != 'workflow_dispatch' || inputs.notify_telegram
         env:
           GH_TOKEN: ${{ github.token }}
         run: .github/scripts/progress.sh start
@@ -130,7 +125,7 @@ jobs:
           gh release create "$VERSION" "$APK" --target "$(git rev-parse HEAD)" --title "Telegram Pro $VERSION" --notes-file release.md
 
       - name: Send to Telegram channel
-        if: steps.meta.outputs.new == 'true' && (github.event_name != 'workflow_dispatch' || inputs.notify_telegram)
+        if: env.BRANCH == 'main'
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -171,8 +166,20 @@ jobs:
             -F caption="<caption_final.txt" \
             -F document=@"${APK}"
 
+      - name: Send APK to Telegram Pro CI
+        if: env.BRANCH == 'dev'
+        env:
+          APK: ${{ steps.meta.outputs.apk }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          curl -sS --fail-with-body "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+            --form-string chat_id="${CI_CHAT_ID}" \
+            --form-string parse_mode=HTML \
+            --form-string caption="🧪 <b>${VERSION}</b> · <code>dev</code> · $(git rev-parse --short HEAD)" \
+            -F document=@"${APK}"
+
       - name: Notify result
-        if: always() && (github.event_name != 'workflow_dispatch' || inputs.notify_telegram)
+        if: always()
         env:
           JOB_STATUS: ${{ job.status }}
           APK: ${{ steps.meta.outputs.apk }}
@@ -183,9 +190,10 @@ jobs:
             .github/scripts/progress.sh final "$JOB_STATUS"
           elif [ "$NEW" = "true" ]; then
             .github/scripts/progress.sh final success "🚀 <b>${VERSION} publicada</b>: <a href=\"${{ github.server_url }}/${{ github.repository }}/releases/tag/${VERSION}\">Release</a> · enviada ao canal"
-          elif [ "$BRANCH" != "main" ]; then
-            .github/scripts/progress.sh final success "🧪 Build de teste, não publicado. APK abaixo."
-            .github/scripts/tg.sh file "$APK" "🧪 <b>${VERSION}</b> · <code>${BRANCH}</code> · $(git rev-parse --short HEAD)"
+          elif [ "$BRANCH" = "main" ]; then
+            .github/scripts/progress.sh final success "📦 <b>${VERSION}</b>: APK enviado ao canal Telegram Pro."
+          elif [ "$BRANCH" = "dev" ]; then
+            .github/scripts/progress.sh final success "🧪 APK enviado ao grupo Telegram Pro CI."
           else
-            .github/scripts/progress.sh final success "Versão já publicada, nada a enviar."
+            .github/scripts/progress.sh final success "Build concluído; APK disponível nos artefatos do GitHub."
           fi
