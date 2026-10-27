@@ -839,6 +839,7 @@ public class ActionBarMenuItem extends FrameLayout {
         }
 
         popupWindow = new ActionBarPopupWindow(container, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT);
+        popupWindow.proGlassBlur = true;
         if (animationEnabled) {
             popupWindow.setAnimationStyle(0);
         } else {

@@ -1880,7 +1880,8 @@ public class SharedConfig {
     }
 
     public static boolean chatBlurEnabled() {
-        return canBlurChat() && LiteMode.isEnabled(LiteMode.FLAG_CHAT_BLUR);
+        // Telegram Pro: Liquid Glass needs the content behind it, so it turns the chat blur on too.
+        return canBlurChat() && (LiteMode.isEnabled(LiteMode.FLAG_CHAT_BLUR) || org.telegram.ui.ProGlass.isEnabled());
     }
 
     public static class BackgroundActivityPrefs {

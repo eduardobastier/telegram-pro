@@ -94,6 +94,7 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
     private BlurredBackgroundDrawable glassDrawable;
     private BlurredBackgroundDrawable glassDrawableBack;
     private BlurredBackgroundDrawable glassDrawableMenu;
+    private BlurredBackgroundDrawable proGlassDrawableAvatar;
     private INavigationLayout.BackButtonState backButtonState = INavigationLayout.BackButtonState.BACK;
     public ImageView backButtonImageView;
     private BackupImageView avatarSearchImageView;
@@ -203,6 +204,23 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
         glassOnlyBack = true;
     }
 
+    private boolean proCenteredTitle() {
+        return glassMode && org.telegram.ui.ProGlass.isEnabled() && proFindAvatarContainer() == null
+            && (subtitleTextView == null || subtitleTextView.getVisibility() == GONE);
+    }
+
+    private ChatAvatarContainer proFindAvatarContainer() {
+        if (chatAvatarContainer != null) {
+            return chatAvatarContainer;
+        }
+        for (int i = 0; i < getChildCount(); i++) {
+            if (getChildAt(i) instanceof ChatAvatarContainer && getChildAt(i).getVisibility() == View.VISIBLE) {
+                return (ChatAvatarContainer) getChildAt(i);
+            }
+        }
+        return null;
+    }
+
     public void setChatAvatarContainer(ChatAvatarContainer chatAvatarContainer) {
         this.chatAvatarContainer = chatAvatarContainer;
     }
@@ -230,6 +248,11 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 
 
         glassDrawableBack = factory.create(this)
+            .setColorProvider(colorProvider)
+            .setRadius(dp(23))
+            .setPadding(dp(6));
+
+        proGlassDrawableAvatar = factory.create(this)
             .setColorProvider(colorProvider)
             .setRadius(dp(23))
             .setPadding(dp(6));
@@ -1545,7 +1568,13 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
                         textTop = (getCurrentActionBarHeight() - titleTextView[i].getTextHeight()) / 2;
                     }
                 }
-                titleTextView[i].layout(textLeft, additionalTop + textTop - titleTextView[i].getPaddingTop(), textLeft + titleTextView[i].getMeasuredWidth(), additionalTop + textTop + titleTextView[i].getTextHeight() - titleTextView[i].getPaddingTop() + titleTextView[i].getPaddingBottom());
+                int titleLeft = textLeft;
+                if (proCenteredTitle()) {
+                    // Telegram Pro: iOS centers the title on screen.
+                    final int w = Math.min(titleTextView[i].getMeasuredWidth(), titleTextView[i].getTextWidth() + titleTextView[i].getPaddingLeft() + titleTextView[i].getPaddingRight());
+                    titleLeft = Math.max(textLeft, (getMeasuredWidth() - w) / 2);
+                }
+                titleTextView[i].layout(titleLeft, additionalTop + textTop - titleTextView[i].getPaddingTop(), titleLeft + titleTextView[i].getMeasuredWidth(), additionalTop + textTop + titleTextView[i].getTextHeight() - titleTextView[i].getPaddingTop() + titleTextView[i].getPaddingBottom());
             }
         }
         if (additionalSubTitleOverlayContainer != null) {
@@ -2231,7 +2260,8 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
     @Override
     protected void dispatchDraw(Canvas canvas) {
         final int p = dp(6);
-        final int s = dp(46);
+        // Telegram Pro: iOS capsules are a bit shorter.
+        final int s = dp(org.telegram.ui.ProGlass.isEnabled() ? 44 : 46);
 
         final float actionModeFactor = getActionModeFactor();
         final int menuWidthA = hasForcedMenuWidth ? forcedMenuWidth : (int) animatorMenuItemsWidth.getFactor();
@@ -2266,11 +2296,58 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
                 right = rightDefault;
             }
 
-            glassDrawable.setBounds(left, t, right, b);
-            glassDrawable.draw(canvas);
+            if (org.telegram.ui.ProGlass.isEnabled()) {
+                // Round capsule ends on both sides (the forum shape is squarer on the left).
+                glassDrawable.setRadius(s / 2f);
+            }
+            final ChatAvatarContainer proContainer = org.telegram.ui.ProGlass.isEnabled() ? proFindAvatarContainer() : null;
+            final View proAvatar = proContainer != null ? proContainer.getAvatarImageView() : null;
+            if (proAvatar != null && proGlassDrawableAvatar != null && proAvatar.getVisibility() == View.VISIBLE && searchFactor == 0 && actionModeFactor == 0) {
+                // Telegram Pro: like iOS, the chat photo sits in its own glass circle next to the title pill.
+                final float cx = proContainer.getX() + proAvatar.getLeft() + proAvatar.getMeasuredWidth() / 2f;
+                final int circleLeft = (int) (cx - s / 2f) - p;
+                // The title pill hugs the title and subtitle, like the iOS capsule.
+                final int maxRight = circleLeft + p - dp(6) + p;
+                float textL = Float.MAX_VALUE, textR = -Float.MAX_VALUE;
+                for (View text : new View[] { proContainer.getTitleTextView(), proContainer.getSubtitleTextView() }) {
+                    if (text instanceof SimpleTextView && text.getVisibility() == View.VISIBLE && text.getWidth() > 0) {
+                        // The texts are centered inside their views: measure the drawn text, not the view.
+                        final SimpleTextView stv = (SimpleTextView) text;
+                        final int textW = Math.min(text.getWidth(), stv.getTextWidth() + stv.getSideDrawablesSize());
+                        final float center = proContainer.getX() + text.getLeft() + text.getWidth() / 2f;
+                        textL = Math.min(textL, center - textW / 2f);
+                        textR = Math.max(textR, center + textW / 2f);
+                    }
+                }
+                int titleLeft = left, titleRight = maxRight;
+                if (textL < textR) {
+                    titleLeft = Math.max(left, (int) textL - dp(16) - p);
+                    titleRight = Math.min(maxRight, (int) textR + dp(16) + p);
+                }
+                glassDrawable.setBounds(titleLeft, t, Math.max(titleLeft + s, titleRight), b);
+                glassDrawable.draw(canvas);
+                final int cy = (int) (proContainer.getY() + proAvatar.getTop() + proAvatar.getMeasuredHeight() / 2f);
+                proGlassDrawableAvatar.setBounds(circleLeft, cy - s / 2 - p, circleLeft + s + p * 2, cy + s / 2 + p);
+                proGlassDrawableAvatar.draw(canvas);
+            } else if (proCenteredTitle() && titleTextView[0] != null && titleTextView[0].getVisibility() == VISIBLE && searchFactor == 0 && actionModeFactor == 0) {
+                // The capsule hugs the centered title, like iOS.
+                final SimpleTextView title = titleTextView[0];
+                final int textW = title.getTextWidth();
+                if (textW > 0) {
+                    final int cx = title.getLeft() + title.getPaddingLeft() + textW / 2;
+                    final int half = textW / 2 + dp(18) + p;
+                    glassDrawable.setBounds(Math.max(left, cx - half), t, Math.min(right, cx + half), b);
+                    glassDrawable.draw(canvas);
+                }
+            } else {
+                glassDrawable.setBounds(left, t, right, b);
+                glassDrawable.draw(canvas);
+            }
         }
         if (glassDrawableBack != null && hasBackButton) {
-            glassDrawableBack.setBounds(0, t, s + p * 2, b);
+            // Telegram Pro: the shorter capsule stays centered on the back icon.
+            final int backShift = org.telegram.ui.ProGlass.isEnabled() ? dp(2) : 0;
+            glassDrawableBack.setBounds(backShift, t, s + p * 2 + backShift, b);
             glassDrawableBack.draw(canvas);
         }
         if (glassDrawableMenu != null && menuWidth > 0 && !glassOnlyBack && !doNotDrawGlassMenu) {

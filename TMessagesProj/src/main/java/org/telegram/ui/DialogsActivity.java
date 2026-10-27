@@ -1802,9 +1802,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             canvas.save();
             if (rightFragmentOpenedProgress > 0) {
                 canvas.clipRect(0, 0, AndroidUtilities.lerp(getMeasuredWidth(), dp(RightSlidingDialogContainer.getRightPaddingSize()), rightFragmentOpenedProgress), getMeasuredHeight());
-                paint.setColor(getThemedColor(Theme.key_chats_pinnedOverlay));
-                paint.setAlpha((int) (paint.getAlpha() * rightFragmentOpenedProgress));
-                canvas.drawRect(0, 0, dp(RightSlidingDialogContainer.getRightPaddingSize()), getMeasuredHeight(), paint);
+                // Telegram Pro: with Liquid Glass the side column keeps the background color (no gray overlay).
+                if (!ProGlass.isEnabled()) {
+                    paint.setColor(getThemedColor(Theme.key_chats_pinnedOverlay));
+                    paint.setAlpha((int) (paint.getAlpha() * rightFragmentOpenedProgress));
+                    canvas.drawRect(0, 0, dp(RightSlidingDialogContainer.getRightPaddingSize()), getMeasuredHeight(), paint);
+                }
 
 
                 int alpha = Theme.dividerPaint.getAlpha();

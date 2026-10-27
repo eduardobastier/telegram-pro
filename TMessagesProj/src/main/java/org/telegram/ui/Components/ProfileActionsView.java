@@ -415,7 +415,9 @@ public class ProfileActionsView extends View {
             useFilledWhiteIcon = 0f;
         }
 
-        final int textColor = ColorUtils.blendARGB(Color.BLACK, Color.WHITE, useFilledWhiteIcon);
+        // Telegram Pro: iOS draws the profile buttons in the accent color.
+        final int baseColor = org.telegram.ui.ProGlass.isEnabled() ? Theme.getColor(Theme.key_featuredStickers_addButton) : Color.BLACK;
+        final int textColor = ColorUtils.blendARGB(baseColor, Color.WHITE, useFilledWhiteIcon);
         if (lastColorFilter == null || lastColorFilterColor != textColor) {
             lastColorFilterColor = textColor;
             lastColorFilter = new PorterDuffColorFilter(textColor, PorterDuff.Mode.SRC_IN);

@@ -684,7 +684,8 @@ public class ActionBarMenu extends LinearLayout {
 
         for (int a = 0, N = getChildCount(); a < N; a++) {
             final View view = getChildAt(a);
-            if (view instanceof ActionBarMenuItem && view.getVisibility() == View.VISIBLE) {
+            // Telegram Pro: items hidden with alpha/scale 0 (e.g. an inactive Done button) don't get a glass pill.
+            if (view instanceof ActionBarMenuItem && view.getVisibility() == View.VISIBLE && view.getAlpha() > 0f && view.getScaleX() > 0f) {
                 final float left = view.getX();
                 final float right = left + view.getWidth();
                 mLeft = Math.min(mLeft, left);

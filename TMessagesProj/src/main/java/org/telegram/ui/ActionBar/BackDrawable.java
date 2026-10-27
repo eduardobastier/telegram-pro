@@ -127,6 +127,18 @@ public class BackDrawable extends Drawable {
             canvas.rotate(arrowRotation);
         }
         float rotation = currentRotation;
+        if (org.telegram.ui.ProGlass.isEnabled() && !alwaysClose && currentRotation == 0 && arrowRotation == 0) {
+            // Telegram Pro: iOS back chevron.
+            final float oldWidth = paint.getStrokeWidth();
+            paint.setStrokeWidth(AndroidUtilities.dp(2.6f));
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            final float x = AndroidUtilities.dp(3.5f), y = AndroidUtilities.dp(8.5f), tip = -AndroidUtilities.dp(4.5f);
+            canvas.drawLine(x, -y, tip, 0, paint);
+            canvas.drawLine(tip, 0, x, y, paint);
+            paint.setStrokeWidth(oldWidth);
+            canvas.restore();
+            return;
+        }
         canvas.translate(-AndroidUtilities.dp(0.66f)/* * (rotation)*/, 0);
         if (!alwaysClose) {
             canvas.rotate(currentRotation * (reverseAngle ? -225 : 135));

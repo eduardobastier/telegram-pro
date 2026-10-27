@@ -24,6 +24,24 @@ import org.telegram.ui.Components.inset.InAppKeyboardInsetView;
 import org.telegram.ui.Components.inset.WindowInsetsProvider;
 
 public class ChatInputViewsContainer extends FrameLayout {
+    public static final int PRO_ATTACH_GAP = 6;
+    private boolean proSplitAttach;
+
+    private boolean proMicCircle;
+    private BlurredBackgroundDrawable proAttachDrawable, proMicDrawable;
+
+    public void setProCircleDrawables(BlurredBackgroundDrawable attach, BlurredBackgroundDrawable mic) {
+        proAttachDrawable = attach.setPadding(dp(7)).setRadius(dp(INPUT_BUBBLE_RADIUS));
+        proMicDrawable = mic.setPadding(dp(7)).setRadius(dp(INPUT_BUBBLE_RADIUS));
+    }
+
+    public void setProSplitAttach(boolean split, boolean micCircle) {
+        if (proSplitAttach != split || proMicCircle != micCircle) {
+            proSplitAttach = split;
+            proMicCircle = micCircle;
+            invalidate();
+        }
+    }
     public static final int INPUT_BUBBLE_RADIUS = 22;
     public static final int INPUT_KEYBOARD_RADIUS = 29;
 
@@ -268,9 +286,26 @@ public class ChatInputViewsContainer extends FrameLayout {
         tmpRect.inset(0, -dp(7));
         tmpRect.offset(0, blurTop + (int) bubbleInputTranlationY);
 
-        blurredBackgroundDrawable.setBounds(tmpRect);
-        if (drawInputBackground)
+        if (drawInputBackground && proSplitAttach && proAttachDrawable != null) {
+            // Telegram Pro: iOS draws the attach and voice buttons in their own glass circles, apart from the field.
+            final int pad = dp(7);
+            final int circle = dp(44);
+            final int bottom = tmpRect.bottom;
+            proAttachDrawable.setBounds(tmpRect.left, bottom - circle - pad * 2, tmpRect.left + circle + pad * 2, bottom);
+            proAttachDrawable.draw(canvas);
+            if (proMicCircle) {
+                proMicDrawable.setBounds(tmpRect.right - circle - pad * 2, bottom - circle - pad * 2, tmpRect.right, bottom);
+                proMicDrawable.draw(canvas);
+                tmpRect.right -= circle + dp(PRO_ATTACH_GAP);
+            }
+            tmpRect.left += circle + dp(PRO_ATTACH_GAP);
+            blurredBackgroundDrawable.setBounds(tmpRect);
             blurredBackgroundDrawable.draw(canvas);
+        } else {
+            blurredBackgroundDrawable.setBounds(tmpRect);
+            if (drawInputBackground)
+                blurredBackgroundDrawable.draw(canvas);
+        }
 
         if (needDrawInAppKeyboard) {
             underKeyboardBackgroundDrawable.draw(canvas);

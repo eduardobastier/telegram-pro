@@ -283,6 +283,7 @@ public abstract class BaseFragment {
     @CallSuper
     protected void onViewCreated(View view) {
         glassEngine.setRoot(view);
+        org.telegram.ui.ProGlass.autoApply(this, view);
     }
 
     protected View createView(Context context) {

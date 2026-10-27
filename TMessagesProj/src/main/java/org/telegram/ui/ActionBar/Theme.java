@@ -5612,6 +5612,37 @@ public class Theme {
         return null;
     }
 
+    // Telegram Pro: adds a theme file to the saved themes list without applying it.
+    public static ThemeInfo installThemeFile(File file, String themeName) {
+        try {
+            if (!themeName.toLowerCase().endsWith(".attheme")) {
+                themeName += ".attheme";
+            }
+            File finalFile = new File(ApplicationLoader.getFilesDirFixed(), themeName);
+            if (!AndroidUtilities.copyFile(file, finalFile)) {
+                return null;
+            }
+            ThemeInfo themeInfo = themesDict.get(themeName);
+            if (themeInfo == null) {
+                themeInfo = new ThemeInfo();
+                themeInfo.name = themeName;
+                themeInfo.account = UserConfig.selectedAccount;
+                themes.add(themeInfo);
+                otherThemes.add(themeInfo);
+                sortThemes();
+            } else {
+                themesDict.remove(themeName);
+            }
+            themeInfo.pathToFile = finalFile.getAbsolutePath();
+            themesDict.put(themeInfo.getKey(), themeInfo);
+            saveOtherThemes(true);
+            return themeInfo;
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return null;
+    }
+
     public static ThemeInfo getTheme(String key) {
         return themesDict.get(key);
     }
@@ -9625,7 +9656,10 @@ public class Theme {
             w = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
             h = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
         }
-        motionBackgroundDrawable.setPatternBitmap(34, SvgHelper.getBitmap(R.raw.default_pattern, w, h, Color.BLACK, 1f, SvgHelper.ScaleMode.ByWidth));
+        // Telegram Pro: with Liquid Glass, dark themes show the same pattern darkened (negative intensity,
+        // like Telegram's dark wallpapers) instead of a solid color.
+        final int intensity = org.telegram.ui.ProGlass.isEnabled() && isCurrentThemeDark() ? -55 : 34;
+        motionBackgroundDrawable.setPatternBitmap(intensity, SvgHelper.getBitmap(R.raw.default_pattern, w, h, Color.BLACK, 1f, SvgHelper.ScaleMode.ByWidth));
         motionBackgroundDrawable.setPatternColorFilter(motionBackgroundDrawable.getPatternColor());
         return motionBackgroundDrawable;
     }

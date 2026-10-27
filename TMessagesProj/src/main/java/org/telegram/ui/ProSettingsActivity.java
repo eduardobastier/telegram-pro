@@ -9,12 +9,15 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
 import android.content.pm.PackageInfo;
+import android.os.Build;
 import android.text.TextUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BuildVars;
@@ -51,6 +54,7 @@ public class ProSettingsActivity extends UniversalFragment {
     public static final int PAGE_MESSAGES = 7;
     public static final int PAGE_CONVERSATIONS = 8;
     public static final int PAGE_OTHER = 10;
+    public static final int PAGE_APPEARANCE = 11;
 
     private static final int BOOST_DOWNLOAD = 1;
     private static final int BOOST_UPLOAD = 2;
@@ -83,6 +87,7 @@ public class ProSettingsActivity extends UniversalFragment {
     private static final int VERSION_PRO = 42;
     private static final int VERSION_BASE = 43;
     private static final int CLEAR_SKIPPED = 44;
+    private static final int LIQUID_GLASS = 45;
     private static final String CHANNEL_USERNAME = "Channel_TelegramPro";
     private static final String REPO_URL = "https://github.com/eduardobastier/telegram-pro";
     private static final int OPEN_PAGE = 100;
@@ -110,7 +115,11 @@ public class ProSettingsActivity extends UniversalFragment {
         actionBar.setAllowOverlayTitle(false);
         actionBar.setTitle(getTitle());
         listView.setSections();
-        actionBar.setAdaptiveBackground(listView);
+        if (ProGlass.isEnabled()) {
+            ProGlass.apply(this, (FrameLayout) view, listView);
+        } else {
+            actionBar.setAdaptiveBackground(listView);
+        }
         return view;
     }
 
@@ -134,6 +143,7 @@ public class ProSettingsActivity extends UniversalFragment {
             case PAGE_MESSAGES: return getString(R.string.ProMessagesHeader);
             case PAGE_CONVERSATIONS: return getString(R.string.ProConversationsHeader);
             case PAGE_OTHER: return getString(R.string.ProOtherHeader);
+            case PAGE_APPEARANCE: return getString(R.string.ProAppearanceHeader);
             default: return getString(R.string.ProSettings);
         }
     }
@@ -143,6 +153,7 @@ public class ProSettingsActivity extends UniversalFragment {
         switch (page) {
             case PAGE_MAIN:
                 items.add(UItem.asButton(OPEN_PAGE + PAGE_CONVERSATIONS, R.drawable.msg_discussion, getString(R.string.ProConversationsHeader)));
+                items.add(UItem.asButton(OPEN_PAGE + PAGE_APPEARANCE, R.drawable.msg_theme, getString(R.string.ProAppearanceHeader)));
                 items.add(UItem.asButton(OPEN_PAGE + PAGE_OTHER, R.drawable.msg_fave, getString(R.string.ProOtherHeader)));
                 items.add(UItem.asShadow(null));
                 fillUpdates(items);
@@ -156,6 +167,9 @@ public class ProSettingsActivity extends UniversalFragment {
                 fillTranscribe(items);
                 fillMessages(items);
                 fillChats(items);
+                break;
+            case PAGE_APPEARANCE:
+                fillAppearance(items);
                 break;
             case PAGE_OTHER:
                 fillSpeed(items);
@@ -198,6 +212,36 @@ public class ProSettingsActivity extends UniversalFragment {
         items.add(UItem.asCheck(PULL_TO_OPEN_ARCHIVE, getString(R.string.ProPullToOpenArchive)).setChecked(SharedConfig.pullToOpenArchive));
         items.add(UItem.asCheck(FORWARD_NO_QUOTE, getString(R.string.ProForwardNoQuote)).setChecked(SharedConfig.forwardNoQuoteButton));
         items.add(UItem.asShadow(getString(R.string.ProChatsInfo)));
+    }
+
+    // Same conditions Telegram uses in Power Saving > Animations for its Liquid Glass effect.
+    private static boolean isLiquidGlassSupported() {
+        return Build.VERSION.SDK_INT >= 33 && (SharedConfig.getDevicePerformanceClass() >= SharedConfig.PERFORMANCE_CLASS_AVERAGE || BuildVars.DEBUG_PRIVATE_VERSION);
+    }
+
+    private void fillAppearance(ArrayList<UItem> items) {
+        items.add(UItem.asHeader(getString(R.string.ProAppearanceHeader)));
+        UItem glass = UItem.asCheck(LIQUID_GLASS, getString(R.string.LiteOptionsLiquidGlass)).setChecked(isLiquidGlassSupported() && LiteMode.isEnabledSetting(LiteMode.FLAG_LIQUID_GLASS));
+        if (!isLiquidGlassSupported()) {
+            glass.subtext = getString(R.string.ProLiquidGlassUnsupported);
+        }
+        items.add(glass);
+        items.add(UItem.asShadow(getString(R.string.ProLiquidGlassInfo)));
+        if (ProGlass.isEnabled()) {
+            items.add(UItem.asHeader(getString(R.string.ProGlassTransparency)));
+            items.add(UItem.asIntSlideView(
+                1,
+                0, ProGlass.getTransparency(), 100,
+                val -> val + "%",
+                val -> {
+                    ProGlass.setTransparency(val);
+                    if (fragmentView != null) {
+                        AndroidUtilities.forEachViews(fragmentView, View::invalidate);
+                    }
+                }
+            ));
+            items.add(UItem.asShadow(getString(R.string.ProGlassTransparencyInfo)));
+        }
     }
 
     private void fillSpeed(ArrayList<UItem> items) {
@@ -283,6 +327,28 @@ public class ProSettingsActivity extends UniversalFragment {
             case CLEAR_SKIPPED:
                 SharedConfig.setProSkippedUpdate("");
                 break;
+            case LIQUID_GLASS:
+                if (!isLiquidGlassSupported()) {
+                    BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.ProLiquidGlassUnsupported)).show();
+                    return;
+                }
+                LiteMode.toggleFlag(LiteMode.FLAG_LIQUID_GLASS, !LiteMode.isEnabledSetting(LiteMode.FLAG_LIQUID_GLASS));
+                // The iOS look comes with Liquid Glass: iOS themes on, the user's themes back when off.
+                if (LiteMode.isEnabledSetting(LiteMode.FLAG_LIQUID_GLASS)) {
+                    ProIosTheme.apply();
+                } else {
+                    ProIosTheme.restore();
+                }
+                listView.adapter.update(true);
+                // The effect is set up when screens are created: recreate them so it applies everywhere.
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (getParentActivity() != null) {
+                        // Come back to this screen once the app has been recreated.
+                        org.telegram.messenger.MessagesController.getGlobalMainSettings().edit().putBoolean("proReopenAppearance", true).apply();
+                        getParentActivity().recreate();
+                    }
+                }, 250);
+                return;
             case GHOST_SAVE_LAST_SEEN:
                 SharedConfig.setProBoolean("ghostSaveLastSeen", !SharedConfig.ghostSaveLastSeen);
                 break;

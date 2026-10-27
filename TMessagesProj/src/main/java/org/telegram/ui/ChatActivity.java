@@ -4657,6 +4657,11 @@ public class ChatActivity extends BaseFragment implements
             glassBackgroundDrawableFactory.create(chatInputViewsContainer, blurredBackgroundColorProvider));
         chatInputViewsContainer.setUnderKeyboardBackgroundDrawable(
             glassBackgroundDrawableFactoryFrosted.create(chatInputViewsContainer, blurredBackgroundColorProvider));
+        if (ProGlass.isEnabled()) {
+            chatInputViewsContainer.setProCircleDrawables(
+                glassBackgroundDrawableFactory.create(chatInputViewsContainer, blurredBackgroundColorProvider),
+                glassBackgroundDrawableFactory.create(chatInputViewsContainer, blurredBackgroundColorProvider));
+        }
 
 
         chatInputBubbleContainer = chatInputViewsContainer.getInputIslandBubbleContainer();
@@ -19834,7 +19839,8 @@ public class ChatActivity extends BaseFragment implements
 
         if (forumTopic != null && avatarContainer != null) {
             avatarContainer.getAvatarImageView().setVisibility(View.VISIBLE);
-            ForumUtilities.setTopicIcon(avatarContainer.getAvatarImageView(), forumTopic, true, true, themeDelegate);
+            ForumUtilities.setTopicIcon(avatarContainer.getAvatarImageView(), forumTopic, true, !ProGlass.isEnabled(), themeDelegate);
+            avatarContainer.proStyleTopicIcon();
         }
     }
 

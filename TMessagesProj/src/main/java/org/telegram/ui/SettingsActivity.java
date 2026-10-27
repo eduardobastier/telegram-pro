@@ -397,7 +397,17 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             }
         };
         contentView.addView(actionBarBackground, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 200, Gravity.TOP));
-        contentView.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL | Gravity.TOP));
+        if (ProGlass.isEnabled() && Build.VERSION.SDK_INT >= 33 && iBlur3SourceGlass != null) {
+            // Telegram Pro: iOS-style floating glass pills instead of the frosted bar.
+            actionBarBackground.setVisibility(View.GONE);
+            final org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory factory = new org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory(iBlur3SourceGlass);
+            factory.setLiquidGlassEffectAllowed(true);
+            actionBar.setupGlass(factory, org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl.topPanelChatActivity(resourceProvider));
+            actionBar.setCastShadows(false);
+            contentView.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL | Gravity.TOP, 6, 0, 6, 0));
+        } else {
+            contentView.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL | Gravity.TOP));
+        }
 
         imageUpdater = new ImageUpdater(true, ImageUpdater.FOR_TYPE_USER, true);
         imageUpdater.setOpenWithFrontfaceCamera(true);
@@ -606,6 +616,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         if (actionBarVisible == visible && !force) return;
 
         actionBarVisible = visible;
+        // Telegram Pro: hide the empty glass title pill while the profile header is on screen.
+        actionBar.setDrawGlassTitle(visible || !ProGlass.isEnabled());
         if (actionBarVisibleAnimator != null) {
             actionBarVisibleAnimator.cancel();
             actionBarVisibleAnimator = null;

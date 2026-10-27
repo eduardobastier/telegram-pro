@@ -1374,6 +1374,7 @@ public class ItemOptions {
                 }
             }
         };
+        actionBarPopupWindow.proGlassBlur = true;
         actionBarPopupWindow.setOnDismissListener(new PopupWindow.OnDismissListener() {
             @Override
             public void onDismiss() {

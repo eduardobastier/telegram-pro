@@ -2795,6 +2795,9 @@
     <string name="ProUpdateNeverChecked">Nunca</string>
     <string name="ProUpdateSkipped">Versão ignorada</string>
     <string name="ProUndoTranslate">Desfazer tradução</string>
+    <string name="ProAppearanceHeader">Aparência</string>
+    <string name="ProLiquidGlassInfo">Efeito de vidro com distorção e desfoque nas barras, abas e menus do Telegram. Pode gastar um pouco mais de bateria. O app recarrega ao mudar a opção.</string>
+    <string name="ProLiquidGlassUnsupported">Precisa do Android 13 ou superior e de um aparelho com desempenho médio ou alto.</string>
     <string name="ProUpdateInfo">As atualizações vêm das releases do GitHub do Telegram Pro. Na primeira vez, o Android pede permissão para instalar apps desta fonte.</string>
     <string name="ProUpdateAvailable">Telegram Pro %1$s disponível</string>
     <string name="ProUpdateInstall">Atualizar</string>
@@ -11729,4 +11732,6 @@
     <string name="NoPaidMessagesTokenUsed">un1 used your QR code and can message you for free</string>
     <string name="NoPaidMessagesTokenUsedOut">You used the QR code of un1 and can message them for free</string>
     <string name="NoPaidMessagesTokenImported">You can now message **%1$s** for free.</string>
+    <string name="ProGlassTransparency">Transparência do Liquid Glass</string>
+    <string name="ProGlassTransparencyInfo">Arraste para escolher quão transparente o vidro fica, de 0% (opaco) a 100% (totalmente transparente).</string>
 </resources>

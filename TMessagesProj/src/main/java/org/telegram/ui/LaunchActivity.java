@@ -262,6 +262,30 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class LaunchActivity extends BasePermissionsActivity implements INavigationLayout.INavigationLayoutDelegate, NotificationCenter.NotificationCenterDelegate, DialogsActivity.DialogsActivityDelegate, IPipActivity {
+
+    // Telegram Pro: iOS icons while Liquid Glass is on.
+    private ProIconResources proIconResources;
+    private int proIconConfigHash;
+
+    @Override
+    public android.content.res.Resources getResources() {
+        final android.content.res.Resources base = super.getResources();
+        boolean enabled;
+        try {
+            enabled = ProGlass.isEnabled();
+        } catch (Throwable e) {
+            enabled = false;
+        }
+        if (!enabled || base == null) {
+            return base;
+        }
+        final int hash = base.getConfiguration().hashCode();
+        if (proIconResources == null || proIconConfigHash != hash) {
+            proIconResources = new ProIconResources(base, getPackageName());
+            proIconConfigHash = hash;
+        }
+        return proIconResources;
+    }
     public final static String EXTRA_FORCE_NOT_INTERNAL_APPS = "force_not_internal_apps";
     public final static String EXTRA_FORCE_REQUEST = "force_request";
     public final static Pattern PREFIX_T_ME_PATTERN = Pattern.compile("^(?:http(?:s|)://|)([A-z0-9-]+?)\\.t\\.me");
@@ -451,6 +475,15 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             AndroidUtilities.isInMultiwindow = isInMultiWindowMode();
         }
         Theme.createCommonChatResources();
+        ProIosTheme.ensureUpToDate();
+        if (MessagesController.getGlobalMainSettings().getBoolean("proReopenAppearance", false)) {
+            // Telegram Pro: toggling Liquid Glass recreates the app; reopen Telegram Pro > Appearance.
+            MessagesController.getGlobalMainSettings().edit().remove("proReopenAppearance").apply();
+            AndroidUtilities.runOnUIThread(() -> {
+                presentFragment(new ProSettingsActivity(), false, true);
+                presentFragment(new ProSettingsActivity(11), false, true);
+            }, 300);
+        }
         Theme.createDialogsResources(this);
         if (SharedConfig.passcodeHash.length() != 0 && SharedConfig.appLocked) {
             SharedConfig.lastPauseTime = (int) (SystemClock.elapsedRealtime() / 1000);

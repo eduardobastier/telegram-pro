@@ -237,6 +237,45 @@ public class ChatActivityEnterView extends FrameLayout implements
     FactorAnimator.Target, Theme.Colorable
 {
 
+    // Telegram Pro: iOS-style input bar with Liquid Glass (attach on the left, emoji/stickers on the right).
+    private final boolean proIosLayout = org.telegram.ui.ProGlass.isEnabled();
+
+    // Tells the input container whether to draw the attach button in its own glass circle.
+    private void proSetSplitAttach(boolean split) {
+        // The reply/edit panel sits inside the field capsule, between the attach and voice circles.
+        if (proIosLayout && topView != null && topView.getLayoutParams() instanceof MarginLayoutParams) {
+            final MarginLayoutParams lp = (MarginLayoutParams) topView.getLayoutParams();
+            final int margin = split ? dp(44 + org.telegram.ui.Components.chat.ChatInputViewsContainer.PRO_ATTACH_GAP) : 0;
+            if (lp.leftMargin != margin || lp.rightMargin != margin) {
+                lp.leftMargin = margin;
+                lp.rightMargin = margin;
+                topView.setLayoutParams(lp);
+            }
+        }
+        // With the voice button in its own circle, the field ends earlier: keep the sticker button inside it.
+        if (proIosLayout && emojiButton != null && emojiButton.getLayoutParams() instanceof MarginLayoutParams) {
+            ((MarginLayoutParams) emojiButton.getLayoutParams()).rightMargin = split ? dp(7) : 0;
+        }
+        for (android.view.ViewParent p = getParent(); p != null; p = p.getParent()) {
+            if (p instanceof org.telegram.ui.Components.chat.ChatInputViewsContainer) {
+                ((org.telegram.ui.Components.chat.ChatInputViewsContainer) p).setProSplitAttach(split, split);
+                return;
+            }
+        }
+    }
+
+    private View proLeftButton() {
+        return proIosLayout && attachButton != null ? attachButton : emojiButton;
+    }
+
+    private boolean proKeepAttachVisible() {
+        return proIosLayout && messageEditText != null && messageEditText.length() > 0 && editingMessageObject == null;
+    }
+
+    private View proRightButton() {
+        return proIosLayout && emojiButton != null ? emojiButton : attachButton;
+    }
+
     private int commonInputType;
     private boolean stickersEnabled;
     private ActionBarMenuSubItem sendWhenOnlineButton;
@@ -2752,7 +2791,9 @@ public class ChatActivityEnterView extends FrameLayout implements
                 }
             }
         });
-        messageEditTextContainer.addView(emojiButton, LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.LEFT, 2, 0, 0, 0));
+        messageEditTextContainer.addView(emojiButton, proIosLayout
+            ? LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.RIGHT)
+            : LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.LEFT, 2, 0, 0, 0));
         setEmojiButtonImage(false, false);
 
         deleteRichDraftButton = new ImageView(context);
@@ -2832,12 +2873,30 @@ public class ChatActivityEnterView extends FrameLayout implements
                     if (getAlpha() < 0.5f) return false;
                     return super.dispatchTouchEvent(event);
                 }
+
+                // iOS style: the attach button stays visible while typing.
+                @Override
+                public void setAlpha(float alpha) {
+                    super.setAlpha(proKeepAttachVisible() ? 1f : alpha);
+                }
+
+                @Override
+                public void setScaleX(float scaleX) {
+                    super.setScaleX(proKeepAttachVisible() ? 1f : scaleX);
+                }
+
+                @Override
+                public void setScaleY(float scaleY) {
+                    super.setScaleY(proKeepAttachVisible() ? 1f : scaleY);
+                }
             };
             attachButton.setScaleType(ImageView.ScaleType.CENTER);
             attachButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_glass_defaultIcon), PorterDuff.Mode.MULTIPLY));
             attachButton.setImageResource(R.drawable.msg_input_attach2);
             attachButton.setBackground(Theme.createSelectorDrawable(getThemedColor(Theme.key_listSelector)));
-            messageEditTextContainer.addView(attachButton, LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.RIGHT));
+            messageEditTextContainer.addView(attachButton, proIosLayout
+                ? LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.LEFT, 2, 0, 0, 0)
+                : LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.RIGHT));
             attachButton.setOnClickListener(v -> {
                 if (adjustPanLayoutHelper != null && adjustPanLayoutHelper.animationInProgress() || attachLayoutPaddingAlpha == 0f) {
                     return;
@@ -3223,7 +3282,8 @@ public class ChatActivityEnterView extends FrameLayout implements
 
             @Override
             protected void dispatchDraw(@NonNull Canvas canvas) {
-                if (!audioVideoButtonContainerForbidden) {
+                // Telegram Pro: the voice button sits on its own glass circle (drawn by the input container).
+                if (!audioVideoButtonContainerForbidden && !proIosLayout) {
                     float s = 1;
                     if (expandStickersButton != null) {
                         if (expandStickersButton.getVisibility() == View.VISIBLE) {
@@ -4608,12 +4668,12 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     public void setBotWebViewButtonOffsetX(float offset) {
-        emojiButton.setTranslationX(offset);
+        proLeftButton().setTranslationX(offset);
         if (messageEditText != null) {
             messageTextTranslationX = offset;
             updateMessageTextParams();
         }
-        attachButton.setTranslationX(attachLayoutPaddingTranslationX + attachLayoutTranslationX + offset);
+        proRightButton().setTranslationX(attachLayoutPaddingTranslationX + attachLayoutTranslationX + offset);
         audioVideoSendButton.setTranslationX(offset);
         if (botButton != null) {
             botButton.setTranslationX(offset);
@@ -6575,7 +6635,7 @@ public class ChatActivityEnterView extends FrameLayout implements
 
         audioVideoButtonContainer.setAlpha(audioVideoButtonContainerForbidden ? 0.5f : 1.0f);
         audioVideoButtonContainer.invalidate();
-        audioVideoSendButton.setColorFilter(new PorterDuffColorFilter(audioVideoButtonContainerForbidden ?
+        audioVideoSendButton.setColorFilter(new PorterDuffColorFilter((audioVideoButtonContainerForbidden || proIosLayout) ?
             getThemedColor(Theme.key_glass_defaultIcon) : Color.WHITE, PorterDuff.Mode.SRC_IN));
         audioVideoSendButton.invalidate();
         updateFieldHint(false);
@@ -8788,6 +8848,10 @@ public class ChatActivityEnterView extends FrameLayout implements
             }
         }
         layoutParams.rightMargin = Math.max(layoutParams.rightMargin, Math.max(0, sendButton.width() - dp(DEFAULT_HEIGHT)));
+        if (proIosLayout) {
+            // Keep room for the emoji button on the right.
+            layoutParams.rightMargin = Math.max(layoutParams.rightMargin, dp(57));
+        }
         if (doneButton != null && doneButton.getVisibility() == VISIBLE) {
             layoutParams.rightMargin = Math.max(layoutParams.rightMargin, Math.max(0, doneButton.width() - dp(DEFAULT_HEIGHT)));
         }
@@ -10408,7 +10472,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         if (botKeyboardView != null) {
             botKeyboardView.updateColors();
         }
-        audioVideoSendButton.setColorFilter(new PorterDuffColorFilter(audioVideoButtonContainerForbidden ? getThemedColor(Theme.key_glass_defaultIcon) : Color.WHITE, PorterDuff.Mode.SRC_IN));
+        audioVideoSendButton.setColorFilter(new PorterDuffColorFilter((audioVideoButtonContainerForbidden || proIosLayout) ? getThemedColor(Theme.key_glass_defaultIcon) : Color.WHITE, PorterDuff.Mode.SRC_IN));
         emojiButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_glass_defaultIcon), PorterDuff.Mode.SRC_IN));
         emojiButton.setBackground(Theme.createSelectorDrawable(getThemedColor(Theme.key_listSelector)));
         deleteRichDraftButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_glass_defaultIcon), PorterDuff.Mode.SRC_IN));
@@ -11217,7 +11281,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     senderSelectView.setAlpha(startAlpha + (endAlpha - startAlpha) * val);
                     senderSelectView.setTranslationX(tx);
                 }
-                emojiButton.setTranslationX(tx);
+                proLeftButton().setTranslationX(tx);
                 messageTextTranslationX = tx;
                 updateMessageTextParams();
             });
@@ -11234,7 +11298,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                         senderSelectView.setTranslationX(startX);
                         tx = senderSelectView.getTranslationX();
                     }
-                    emojiButton.setTranslationX(tx);
+                    proLeftButton().setTranslationX(tx);
                     messageTextTranslationX = tx;
                     updateMessageTextParams();
 
@@ -11249,7 +11313,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                         if (senderSelectView != null) {
                             senderSelectView.setVisibility(GONE);
                         }
-                        emojiButton.setTranslationX(0);
+                        proLeftButton().setTranslationX(0);
                         messageTextTranslationX = 0;
                         updateMessageTextParams();
                     }
@@ -11267,7 +11331,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                         senderSelectView.setTranslationX(endX);
                         tx = senderSelectView.getTranslationX();
                     }
-                    emojiButton.setTranslationX(tx);
+                    proLeftButton().setTranslationX(tx);
                     messageTextTranslationX = tx;
                     updateMessageTextParams();
                     requestLayout();
@@ -11286,7 +11350,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 senderSelectView.setTranslationX(endX);
             }
             float translationX = isVisible ? endX : 0;
-            emojiButton.setTranslationX(translationX);
+            proLeftButton().setTranslationX(translationX);
             messageTextTranslationX = translationX;
             updateMessageTextParams();
             if (senderSelectView != null) {
@@ -14525,9 +14589,10 @@ public class ChatActivityEnterView extends FrameLayout implements
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int wasHeight = textFieldContainer.getMeasuredHeight();
+        proSetSplitAttach(false);
         if (botCommandsMenuButton != null && botCommandsMenuButton.getTag() != null) {
             botCommandsMenuButton.measure(widthMeasureSpec, heightMeasureSpec);
-            ((MarginLayoutParams) emojiButton.getLayoutParams()).leftMargin = dp(10) + (botCommandsMenuButton == null ? 0 : botCommandsMenuButton.getMeasuredWidth());
+            ((MarginLayoutParams) proLeftButton().getLayoutParams()).leftMargin = dp(10) + (botCommandsMenuButton == null ? 0 : botCommandsMenuButton.getMeasuredWidth());
             if (deleteRichDraftButton != null) {
                 ((MarginLayoutParams) deleteRichDraftButton.getLayoutParams()).leftMargin = dp(10) + (botCommandsMenuButton == null ? 0 : botCommandsMenuButton.getMeasuredWidth());
             }
@@ -14540,23 +14605,30 @@ public class ChatActivityEnterView extends FrameLayout implements
         } else if (senderSelectView != null && senderSelectView.getVisibility() == View.VISIBLE) {
             int width = senderSelectView.getLayoutParams().width, height = senderSelectView.getLayoutParams().height;
             senderSelectView.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
-            ((MarginLayoutParams) emojiButton.getLayoutParams()).leftMargin = dp(7) + width;
+            // Telegram Pro: the "send as" avatar gets the separate glass circle; the field starts after it.
+            final boolean split = proIosLayout;
+            proSetSplitAttach(split);
+            ((MarginLayoutParams) senderSelectView.getLayoutParams()).leftMargin = dp(split ? 3.66f : 4.66f);
+            final int shift = split ? dp(44 + org.telegram.ui.Components.chat.ChatInputViewsContainer.PRO_ATTACH_GAP) - width - dp(-1) : 0;
+            ((MarginLayoutParams) proLeftButton().getLayoutParams()).leftMargin = dp(7) + width + shift;
             if (deleteRichDraftButton != null) {
-                ((MarginLayoutParams) deleteRichDraftButton.getLayoutParams()).leftMargin = dp(7) + width;
+                ((MarginLayoutParams) deleteRichDraftButton.getLayoutParams()).leftMargin = dp(7) + width + shift;
             }
             if (messageEditText != null) {
-                ((MarginLayoutParams) messageEditText.getLayoutParams()).leftMargin = dp(54) + width;
+                ((MarginLayoutParams) messageEditText.getLayoutParams()).leftMargin = dp(54) + width + shift;
             }
             if (richDraftPreview != null) {
                 ((MarginLayoutParams) richDraftPreview.getLayoutParams()).leftMargin = dp(54) + width;
             }
         } else {
-            ((MarginLayoutParams) emojiButton.getLayoutParams()).leftMargin = dp(3);
+            final boolean split = proIosLayout && attachButton != null && attachButton.getVisibility() == VISIBLE;
+            proSetSplitAttach(split);
+            ((MarginLayoutParams) proLeftButton().getLayoutParams()).leftMargin = split ? dp(1) : dp(3);
             if (deleteRichDraftButton != null) {
                 ((MarginLayoutParams) deleteRichDraftButton.getLayoutParams()).leftMargin = dp(3);
             }
             if (messageEditText != null) {
-                ((MarginLayoutParams) messageEditText.getLayoutParams()).leftMargin = dp(50);
+                ((MarginLayoutParams) messageEditText.getLayoutParams()).leftMargin = split ? dp(44 + org.telegram.ui.Components.chat.ChatInputViewsContainer.PRO_ATTACH_GAP + 12) : dp(50);
             }
             if (richDraftPreview != null) {
                 ((MarginLayoutParams) richDraftPreview.getLayoutParams()).leftMargin = dp(50);
@@ -14726,7 +14798,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         emojiButtonPaddingScale = s;
         emojiButtonPaddingAlpha = progress;
         updateEmojiButtonParams();
-        emojiButton.setTranslationX(-leftPadding);
+        proLeftButton().setTranslationX(-leftPadding);
         messageTextPaddingTranslationX = -leftPadding - (messageEditText == null ? 0 : dp(40) + (senderSelectView != null && senderSelectView.getVisibility() == View.VISIBLE ? dp(18) : 0)) * (1f - progress);
         if (recordDeleteImageView != null) {
             recordDeleteImageView.setTranslationX(-leftPadding);
@@ -14810,7 +14882,13 @@ public class ChatActivityEnterView extends FrameLayout implements
 
     private void updateAttachButtonTranslationX() {
         if (attachButton == null) return;
-        attachButton.setTranslationX(attachLayoutPaddingTranslationX + attachLayoutTranslationX + (sendButton != null ? (
+        if (proIosLayout) {
+            // Emoji sits on the right: it only moves aside when the send button gets wider.
+            attachButton.setTranslationX(0);
+            emojiButton.setTranslationX(sendButton != null ? -Math.max(0, sendButton.width() - dp(DEFAULT_HEIGHT + 12)) * sendButton.getAlpha() : 0);
+            return;
+        }
+        proRightButton().setTranslationX(attachLayoutPaddingTranslationX + attachLayoutTranslationX + (sendButton != null ? (
             -Math.max(0, sendButton.width() - dp(DEFAULT_HEIGHT + 12)) * sendButton.getAlpha()
         ) : 0));
     }

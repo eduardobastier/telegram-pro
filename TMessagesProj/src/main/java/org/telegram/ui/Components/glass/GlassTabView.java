@@ -323,7 +323,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
             boolean update = lastIsSelected != isSelected;
             if (lastIconAnimationRaw != animationToSet) {
                 lastIconAnimationRaw = animationToSet;
-                imageView.setAnimation(animationToSet, 24, 24);
+                imageView.setAnimation(animationToSet, proIconSize, proIconSize);
                 update = true;
             }
 
@@ -361,7 +361,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
             if (lastIconAnimationRaw != animationToSet) {
                 lastIconAnimationRaw = animationToSet;
 
-                imageView.setAnimation(animationToSet, 24, 24);
+                imageView.setAnimation(animationToSet, proIconSize, proIconSize);
                 imageView.getAnimatedDrawable().setPlayInDirectionOfCustomEndFrame(false);
                 if (animated) {
                     imageView.getAnimatedDrawable().setCurrentFrame(0);
@@ -374,7 +374,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         }
 
         if (imageView.getAnimatedDrawable() == null) {
-            imageView.setAnimation(tabAnimation.iconToFilled, 24, 24);
+            imageView.setAnimation(tabAnimation.iconToFilled, proIconSize, proIconSize);
         }
 
         final RLottieDrawable drawable = imageView.getAnimatedDrawable();
@@ -397,13 +397,23 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         }
     }
 
+    // Telegram Pro: iOS tab animations draw a smaller glyph on their canvas; render them larger.
+    private int proIconSize = 24;
+
+    private static boolean proIosTab(TabAnimation animation) {
+        return org.telegram.ui.ProGlass.isEnabled() && (animation == TabAnimation.CHATS || animation == TabAnimation.CONTACTS || animation == TabAnimation.SETTINGS);
+    }
+
     public static GlassTabView createMainTab(Context context, Theme.ResourcesProvider resourcesProvider, TabAnimation tabAnimation, @StringRes int stringRes) {
         GlassTabView tab = new GlassTabView(context);
         tab.resourcesProvider = resourcesProvider;
         tab.tabAnimation = tabAnimation;
+        if (proIosTab(tabAnimation)) {
+            tab.proIconSize = 44;
+        }
         tab.textView.setText(LocaleController.getString(stringRes));
         tab.checkPlayAnimation(false);
-        tab.imageView.setLayoutParams(LayoutHelper.createFrame(24, 24, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 4, 0, 0));
+        tab.imageView.setLayoutParams(LayoutHelper.createFrame(tab.proIconSize, tab.proIconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 4 - (tab.proIconSize - 24) / 2f, 0, 0));
         tab.colorDefault = Theme.getColor(Theme.key_glass_tabUnselected, resourcesProvider);
         tab.colorSelected = Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider);
         tab.colorSelectedText = Theme.getColor(Theme.key_glass_tabSelectedText, resourcesProvider);
@@ -618,6 +628,14 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         tabAnimationBot = null;
         lastIconAnimationRaw = 0;
         lastBotIconId = 0;
+        final int size = proIosTab(animation) ? 44 : 24;
+        if (size != proIconSize && imageView.getLayoutParams() instanceof android.view.ViewGroup.MarginLayoutParams) {
+            android.view.ViewGroup.MarginLayoutParams lp = (android.view.ViewGroup.MarginLayoutParams) imageView.getLayoutParams();
+            lp.width = lp.height = AndroidUtilities.dp(size);
+            lp.topMargin -= AndroidUtilities.dp((size - proIconSize) / 2f);
+            imageView.setLayoutParams(lp);
+        }
+        proIconSize = size;
         imageView.clearAnimationDrawable();
         checkPlayAnimation(false);
     }

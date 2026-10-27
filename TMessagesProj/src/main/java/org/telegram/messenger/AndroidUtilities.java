@@ -1184,7 +1184,7 @@ public class AndroidUtilities {
             if (path != null) {
                 inputStream = new FileInputStream(path);
             } else {
-                inputStream = ApplicationLoader.applicationContext.getResources().openRawResource(rawRes);
+                inputStream = ApplicationLoader.applicationContext.getResources().openRawResource(org.telegram.ui.ProIconResources.mapRaw(rawRes));
             }
             int readLen;
             byte[] buffer = bufferLocal.get();

@@ -1580,6 +1580,9 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
             onCreateInternal();
         } else {
             super.show();
+            if (containerView != null && shadowDrawable != null && containerView.getBackground() == shadowDrawable) {
+                containerView.setBackground(org.telegram.ui.ProGlass.frost(containerView, shadowDrawable, AndroidUtilities.dp(14), 0));
+            }
         }
         setShowing(true);
         if (focusable) {

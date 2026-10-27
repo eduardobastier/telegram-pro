@@ -61,6 +61,9 @@ import java.util.HashMap;
 
 public class ActionBarPopupWindow extends PopupWindow {
 
+    // Telegram Pro: blur what is behind this popup when Liquid Glass is on (header "more" menus only).
+    public boolean proGlassBlur;
+
     private static Method layoutInScreenMethod;
     private static final Field superListenerField;
     private static DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator();
@@ -835,8 +838,32 @@ public class ActionBarPopupWindow extends PopupWindow {
         try {
             super.showAsDropDown(anchor, xoff, yoff);
             registerListener(anchor);
+            applyProGlass();
         } catch (Exception e) {
             FileLog.e(e);
+        }
+    }
+
+    private void applyProGlass() {
+        if (proGlassBlur) {
+            frostLayouts(getContentView());
+        }
+    }
+
+    // Menus may wrap their panels in containers (ItemOptions): frost every panel found.
+    private static void frostLayouts(View view) {
+        if (view instanceof ActionBarPopupWindowLayout) {
+            final ActionBarPopupWindowLayout layout = (ActionBarPopupWindowLayout) view;
+            final Drawable background = layout.getBackgroundDrawable();
+            if (background != null) {
+                layout.setBackgroundDrawable(org.telegram.ui.ProGlass.frost(layout, background, AndroidUtilities.dp(16), AndroidUtilities.dp(16)));
+            }
+        }
+        if (view instanceof ViewGroup) {
+            final ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                frostLayouts(group.getChildAt(i));
+            }
         }
     }
 
@@ -1010,6 +1037,7 @@ public class ActionBarPopupWindow extends PopupWindow {
     public void showAtLocation(View parent, int gravity, int x, int y) {
         super.showAtLocation(parent, gravity, x, y);
         unregisterListener();
+        applyProGlass();
     }
 
     @Override

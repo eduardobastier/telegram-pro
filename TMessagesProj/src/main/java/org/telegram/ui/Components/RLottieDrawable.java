@@ -636,6 +636,9 @@ public class RLottieDrawable extends BitmapDrawable implements Animatable, Bitma
     }
 
     public RLottieDrawable(@RawRes int rawRes, int w, int h, boolean startDecode, int[] colorReplacement) {
+        // Telegram Pro: iOS versions of some animations (tab icons) with Liquid Glass. The iOS id has no
+        // precomputed metadata, so the JSON is read and measured directly.
+        rawRes = org.telegram.ui.ProIconResources.mapRaw(rawRes);
         width = w;
         height = h;
         autoRepeat = 0;

@@ -416,8 +416,19 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         bounce.setPressed(pressed);
     }
 
+    private int proLastTextWidths;
+
     @Override
     protected void dispatchDraw(Canvas canvas) {
+        if (org.telegram.ui.ProGlass.isEnabled() && glassMode && getParent() instanceof View) {
+            // The action bar sizes the title capsule from these texts: redraw it when they change.
+            final int widths = (titleTextView != null ? titleTextView.getTextWidth() : 0) * 31
+                + (subtitleTextView != null ? subtitleTextView.getTextWidth() : 0);
+            if (widths != proLastTextWidths) {
+                proLastTextWidths = widths;
+                ((View) getParent()).invalidate();
+            }
+        }
         canvas.save();
         final float s = bounce.getScale(.02f);
         canvas.scale(s, s, getPivotX(), getHeight() - ActionBar.getCurrentActionBarHeight() / 2f);
@@ -665,7 +676,8 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         final int width = MeasureSpec.getSize(widthMeasureSpec);
         final int availableWidth = width - dp((avatarImageView.getVisibility() == VISIBLE ? 54 : 0) + 16);
-        avatarImageView.measure(MeasureSpec.makeMeasureSpec(dp(avatarSizeInDp) - 2, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(dp(avatarSizeInDp) - 2, MeasureSpec.EXACTLY));
+        final int avatarSize = org.telegram.ui.ProGlass.isEnabled() && glassMode ? 36 : avatarSizeInDp;
+        avatarImageView.measure(MeasureSpec.makeMeasureSpec(dp(avatarSize) - 2, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(dp(avatarSize) - 2, MeasureSpec.EXACTLY));
         titleTextView.measure(MeasureSpec.makeMeasureSpec(availableWidth, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(dp(24 + 8), MeasureSpec.AT_MOST));
         if (subtitleTextView != null) {
             subtitleTextView.measure(MeasureSpec.makeMeasureSpec(availableWidth, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(dp(20), MeasureSpec.AT_MOST));
@@ -705,7 +717,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         titleTextLargerCopyView = new SimpleTextView(getContext());
         this.titleTextLargerCopyView.set(titleTextLargerCopyView);
         titleTextLargerCopyView.setTextColor(getThemedColor(Theme.key_actionBarDefaultTitle));
-        titleTextLargerCopyView.setTextSizePx(dp(glassMode ? 17.5f : 18));
+        titleTextLargerCopyView.setTextSizePx(dp(glassMode ? (org.telegram.ui.ProGlass.isEnabled() ? 16 : 17.5f) : 18));
         titleTextLargerCopyView.setGravity(Gravity.LEFT);
         titleTextLargerCopyView.setTypeface(AndroidUtilities.bold());
         titleTextLargerCopyView.setLeftDrawableTopPadding(-dp(1.3f));
@@ -731,7 +743,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         this.subtitleTextLargerCopyView.set(subtitleTextLargerCopyView);
         subtitleTextLargerCopyView.setTextColor(getThemedColor(Theme.key_actionBarDefaultSubtitle));
         subtitleTextLargerCopyView.setTag(Theme.key_actionBarDefaultSubtitle);
-        subtitleTextLargerCopyView.setTextSizePx(dp(glassMode ? 13.5f : 14));
+        subtitleTextLargerCopyView.setTextSizePx(dp(glassMode ? (org.telegram.ui.ProGlass.isEnabled() ? 12.5f : 13.5f) : 14));
         subtitleTextLargerCopyView.setGravity(Gravity.LEFT);
         if (subtitleTextView != null) {
             subtitleTextLargerCopyView.setText(subtitleTextView.getText());
@@ -756,10 +768,10 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     private boolean glassMode;
     public void setGlassMode() {
         if (titleTextView != null) {
-            titleTextView.setTextSizePx(dp(17.5f));
+            titleTextView.setTextSizePx(dp(org.telegram.ui.ProGlass.isEnabled() ? 16 : 17.5f));
         }
         if (subtitleTextView != null) {
-            subtitleTextView.setTextSizePx(dp(13.5f));
+            subtitleTextView.setTextSizePx(dp(org.telegram.ui.ProGlass.isEnabled() ? 12.5f : 13.5f));
         }
         glassMode = true;
     }
@@ -814,6 +826,84 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         if (subtitleTextLargerCopyView != null) {
             subtitleTextLargerCopyView.layout(l, subtitleTop, l + subtitleTextLargerCopyView.getMeasuredWidth(), subtitleTop + subtitleTextLargerCopyView.getTextHeight());
         }
+        // Only the chat header (glass pill) gets the iOS arrangement; other bars (e.g. topics list) keep theirs.
+        if (org.telegram.ui.ProGlass.isEnabled() && glassMode) {
+            layoutIosStyle();
+        }
+    }
+
+    // Telegram Pro, iOS style: a topic icon sits in a round, softly filled circle like the pill around it.
+    public void proStyleTopicIcon() {
+        if (!org.telegram.ui.ProGlass.isEnabled() || avatarImageView == null) {
+            return;
+        }
+        avatarImageView.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setOval(0, 0, view.getWidth(), view.getHeight());
+            }
+        });
+        avatarImageView.setClipToOutline(true);
+        final android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+        background.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        background.setColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider), 0.08f));
+        avatarImageView.setBackground(background);
+    }
+
+    // Telegram Pro, iOS style with Liquid Glass: avatar on the right, name and status centered.
+    private void layoutIosStyle() {
+        final int width = getMeasuredWidth();
+        final boolean hasAvatar = avatarImageView.getVisibility() == VISIBLE;
+        // Keep the avatar inside the glass pill (the pill has 6dp of padding around the bar).
+        // Private chats reserve room for the call button, which leaves the pill a bit wider on the right.
+        final boolean wideRight = getLayoutParams() instanceof MarginLayoutParams && ((MarginLayoutParams) getLayoutParams()).rightMargin > dp(60);
+        final int avatarLeft = width - avatarImageView.getMeasuredWidth() - dp(wideRight ? 7 : 10);
+        if (hasAvatar) {
+            final int dx = avatarLeft - avatarImageView.getLeft();
+            // The smaller iOS avatar keeps the center of the regular 42dp one.
+            final int dy = dp(3);
+            avatarImageView.offsetLeftAndRight(dx);
+            avatarImageView.offsetTopAndBottom(dy);
+            for (View badge : new View[] { communityItem, timeItem, starBgItem, starFgItem }) {
+                if (badge != null) {
+                    badge.offsetLeftAndRight(dx);
+                    badge.offsetTopAndBottom(dy);
+                }
+            }
+        }
+        final int textLeft = leftPadding + dp(13);
+        final int textRight = hasAvatar ? avatarLeft - dp(18) : width - dp(13);
+        // The iOS capsule is shorter: lift the texts so they sit centered with room below.
+        final int lift = dp(2);
+        for (View text : new View[] { titleTextView, subtitleTextView, animatedSubtitleTextView }) {
+            if (text != null) {
+                text.offsetTopAndBottom(-lift);
+            }
+        }
+        centerHorizontally(titleTextView, textLeft, textRight);
+        if (subtitleTextView != null) {
+            centerHorizontally(subtitleTextView, textLeft, textRight);
+        }
+        if (animatedSubtitleTextView != null) {
+            animatedSubtitleTextView.setGravity(Gravity.CENTER_HORIZONTAL);
+            animatedSubtitleTextView.layout(textLeft, animatedSubtitleTextView.getTop(), textRight, animatedSubtitleTextView.getBottom());
+        }
+    }
+
+    private static void centerHorizontally(View view, int left, int right) {
+        if (view == null) {
+            return;
+        }
+        if (view instanceof org.telegram.ui.ActionBar.SimpleTextView) {
+            // Span the whole area and center the text inside it: the text can change (status, typing)
+            // without a new layout, and a view sized to the old text would cut the new one.
+            ((org.telegram.ui.ActionBar.SimpleTextView) view).setGravity(Gravity.CENTER_HORIZONTAL);
+            view.layout(left, view.getTop(), right, view.getBottom());
+            return;
+        }
+        final int width = Math.min(view.getMeasuredWidth(), right - left);
+        final int newLeft = left + Math.max(0, (right - left - width) / 2);
+        view.layout(newLeft, view.getTop(), newLeft + width, view.getBottom());
     }
 
     public void setLeftPadding(int value) {
@@ -1376,7 +1466,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         avatarDrawable.setInfo(currentAccount, chat);
         if (avatarImageView != null) {
             avatarImageView.setForUserOrChat(chat, avatarDrawable);
-            avatarImageView.setRoundRadius(ChatObject.isForum(chat) ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(21));
+            avatarImageView.setRoundRadius(ChatObject.isForum(chat) && !org.telegram.ui.ProGlass.isEnabled() ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(21));
         }
     }
 
@@ -1492,7 +1582,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
             if (avatarImageView != null) {
                 avatarImageView.setAnimatedEmojiDrawable(null);
                 avatarImageView.setForUserOrChat(chat, avatarDrawable);
-                avatarImageView.setRoundRadius(chat.forum ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(21));
+                avatarImageView.setRoundRadius(chat.forum && !org.telegram.ui.ProGlass.isEnabled() ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(21));
             }
         }
     }
