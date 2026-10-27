@@ -14,6 +14,10 @@ on:
         description: Branch to build
         type: string
         default: main
+      notify_telegram:
+        description: Send build notifications and APK to Telegram
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -40,6 +44,7 @@ jobs:
           submodules: recursive
 
       - name: Live status in the CI group
+        if: github.event_name != 'workflow_dispatch' || inputs.notify_telegram
         env:
           GH_TOKEN: ${{ github.token }}
         run: .github/scripts/progress.sh start
@@ -125,7 +130,7 @@ jobs:
           gh release create "$VERSION" "$APK" --target "$(git rev-parse HEAD)" --title "Telegram Pro $VERSION" --notes-file release.md
 
       - name: Send to Telegram channel
-        if: steps.meta.outputs.new == 'true'
+        if: steps.meta.outputs.new == 'true' && (github.event_name != 'workflow_dispatch' || inputs.notify_telegram)
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -167,7 +172,7 @@ jobs:
             -F document=@"${APK}"
 
       - name: Notify result
-        if: always()
+        if: always() && (github.event_name != 'workflow_dispatch' || inputs.notify_telegram)
         env:
           JOB_STATUS: ${{ job.status }}
           APK: ${{ steps.meta.outputs.apk }}
