@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.2
+- Base atualizada para o Telegram 13.1.1 (7237)
+- Removido o experimento de Liquid Glass do Telegram Pro
+- Compatibilidade dos recursos do Telegram Pro ajustada para a nova base
+
 ## v1.3.1
 - Notificações instantâneas: o app agora recebe push pelo Firebase mesmo fechado
 - Traduzir/Desfazer tradução no menu da mensagem
