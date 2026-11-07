@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.3
+- Base atualizada para o Telegram 13.1.1
+- Todos os recursos do Telegram Pro mantidos
+
 ## v1.3.2
 - Base atualizada para o Telegram 13.1.1 (7237)
 - Removido o experimento de Liquid Glass do Telegram Pro
